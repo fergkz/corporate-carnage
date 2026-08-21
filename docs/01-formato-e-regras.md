@@ -24,7 +24,7 @@
 - A única dependência local é Docker com Docker Compose. Dependências de aplicação e servidor ficam dentro dos containers.
 - Inclua `compose.yaml` e faça o projeto iniciar com `docker compose up --build`.
 - Inclua e mantenha ativo o serviço Cloudflare Quick Tunnel. A URL pública temporária é o meio padrão de acesso dos jogadores.
-- A porta do jogo é livre. Documente a porta escolhida e, quando necessário, configure `GAME_PORT` e `HOST_PORT` no Compose.
+- A porta do jogo é livre. Ao escolher uma porta, informe-a na linha de comando do serviço `tunnel` no `compose.yaml`.
 - Não são exigidos login, banco de dados, persistência, ranking ou publicação profissional.
 
 ## Entrega e teste

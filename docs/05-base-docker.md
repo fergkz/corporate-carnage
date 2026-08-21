@@ -10,9 +10,9 @@ Com Docker e Docker Compose instalados, execute:
 docker compose up --build
 ```
 
-O jogo estará disponível na porta local configurada. Por padrão, a base usa `http://localhost:8080`, mas essa porta não é obrigatória.
+Na primeira execução, não use `-d`: o terminal exibirá uma caixa com o título **URL PÚBLICA DO JOGO**. Copie esse link e compartilhe com os jogadores.
 
-O serviço obrigatório `tunnel` exibirá uma URL pública temporária nos logs. Essa URL é o acesso padrão que deve ser compartilhado com os jogadores:
+Se o Compose estiver em segundo plano, recupere a mesma URL com:
 
 ```bash
 docker compose logs -f tunnel
@@ -28,21 +28,20 @@ docker compose logs -f tunnel
 
 Você pode substituir a implementação de referência por qualquer linguagem ou framework. Mantenha apenas estes contratos:
 
-- defina a porta interna do jogo em `GAME_PORT`;
-- se desejar acesso local, defina `HOST_PORT`; ele pode ser diferente da porta interna;
-- o serviço obrigatório `tunnel` deve encaminhar para `http://game:${GAME_PORT}`;
+- escolha qualquer porta interna para o jogo;
+- altere uma única linha no serviço `tunnel` para apontar para `http://game:SUA_PORTA`;
 - o projeto deve responder `GET /health` com sucesso, pois o Compose espera o jogo iniciar antes de abrir o túnel.
 
 Ao trocar de linguagem, atualize `Dockerfile`, `compose.yaml` e o README do jogo. Não é necessário preservar `server.js`, `package.json` ou a página de exemplo.
 
-## Escolher portas
+## Escolher porta
 
-Sem configuração adicional, a referência usa a porta 8080 dentro e fora do container. Para usar outra porta, informe as variáveis ao iniciar:
+A referência executável usa 8080, mas essa escolha não é obrigatória. Quando seu jogo usar outra porta, altere diretamente a linha abaixo no `compose.yaml`:
 
-```bash
-GAME_PORT=3000 HOST_PORT=3001 docker compose up --build
+```yaml
+command: tunnel --no-autoupdate --url http://game:SUA_PORTA
 ```
 
-Nesse exemplo, o jogo atende em 3000 dentro do container, pode ser aberto localmente em `http://localhost:3001` e o Quick Tunnel encaminha para a porta 3000. Se a aplicação usar outra variável para definir sua porta, adapte o serviço `game` no `compose.yaml`.
+Se o comando de saúde da referência também não servir para sua linguagem, adapte-o para consultar o endpoint de saúde do seu jogo.
 
 Não há login, banco de dados ou persistência nesta base. Esses itens não são necessários para o hackathon.

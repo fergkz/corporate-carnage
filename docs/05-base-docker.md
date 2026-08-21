@@ -10,7 +10,7 @@ Com Docker e Docker Compose instalados, execute:
 docker compose up --build
 ```
 
-Na primeira execução, não use `-d`: o terminal exibirá uma caixa com o título **URL PÚBLICA DO JOGO**. Copie esse link e compartilhe com os jogadores.
+Na primeira execução, não use `-d`: o terminal exibirá uma caixa com o título **URL PÚBLICA DO JOGO**. Copie esse link e compartilhe com os jogadores. Esta URL é o único endereço de acesso à partida.
 
 Se o Compose estiver em segundo plano, recupere a mesma URL com:
 
@@ -45,3 +45,11 @@ command: tunnel --no-autoupdate --url http://game:SUA_PORTA
 Se o comando de saúde da referência também não servir para sua linguagem, adapte-o para consultar o endpoint de saúde do seu jogo.
 
 Não há login, banco de dados ou persistência nesta base. Esses itens não são necessários para o hackathon.
+
+## Antes de entregar
+
+Teste o caminho que a organização usará: em uma cópia limpa do repositório, execute `docker compose up --build`, localize a URL pública nos logs e abra-a em outro navegador. Não dependa de arquivos fora do Git, de variáveis locais não documentadas ou de uma porta exposta na máquina.
+
+---
+
+[← Spec do jogo](04-template-spec-do-jogo.md) · [Início](../README.md)

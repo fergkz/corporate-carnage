@@ -8,6 +8,19 @@ O jogo é o exercício; o aprendizado é sair de uma ideia vaga, definir um reco
 
 Uma *spec* (especificação) é uma descrição curta e objetiva do que será construído. Ela evita respostas genéricas, reduz retrabalho e dá um critério claro para decidir o que fica de fora.
 
+Você não precisa saber tudo antes de começar. O papel da IA é ajudar a explicar opções, criar a primeira versão e corrigir problemas; o seu papel é manter o objetivo pequeno, executar o que foi proposto e verificar se o resultado atende à spec.
+
+## Antes de pedir código
+
+Se você nunca criou um jogo ou trabalhou com IA, siga esta ordem:
+
+1. Abra o repositório e rode `docker compose up --build` para entender a base que já funciona.
+2. Abra a URL pública exibida pelo terminal; ela é o endereço que os jogadores usarão.
+3. Preencha a spec antes de alterar arquivos.
+4. Só então peça uma alteração pequena para a IA.
+
+Quando algo não estiver claro, pergunte antes de mandar implementar: “explique este arquivo”, “qual é a responsabilidade deste serviço?” ou “qual é a menor alteração para fazer X?”. Entender o próximo passo é mais útil do que aceitar uma grande mudança sem saber como testá-la.
+
 ## Fase 1 — Escolha a menor partida possível
 
 Antes de abrir a ferramenta de IA, escreva uma frase para o jogo:
@@ -54,6 +67,8 @@ verem um ao outro e se moverem. Explique os arquivos que serão criados antes de
 
 Revise a resposta. Se ela sugerir banco de dados, autenticação ou arquitetura complexa, corte. Para este evento, uma solução simples que roda vale mais que uma solução completa no papel.
 
+Também confirme que o plano preserva o Quick Tunnel. O Compose precisa continuar subindo o jogo e mostrando uma URL pública; os jogadores não devem usar uma porta exposta diretamente na máquina.
+
 ## Fase 4 — Desenvolva por marcos curtos
 
 Peça uma mudança por vez, execute e teste. Uma sequência recomendada é:
@@ -73,6 +88,12 @@ Ao terminar, diga como testar em dois navegadores.
 
 Se der erro, informe o erro completo e o que você esperava que acontecesse. Não peça apenas “corrija”; diga em qual comando ou tela o problema apareceu.
 
+## Sprites e recursos visuais
+
+Você pode procurar sprites, ícones, tilesets, sons e efeitos online para não gastar o hackathon desenhando tudo do zero. Comece com uma busca objetiva, como “pixel art spaceship sprite”, “top-down arena tileset” ou “platformer character sprite”. Baixe poucos recursos e implemente primeiro a mecânica; trocar quadrados e círculos por arte vem depois que a partida estiver funcionando.
+
+Verifique a licença do material e mantenha os créditos necessários no README. Não use marcas, personagens ou artes de terceiros sem permissão.
+
 ## Fase 5 — Use a ferramenta no lugar certo
 
 | Situação | Melhor uso da IA |
@@ -89,3 +110,7 @@ Você não precisa usar uma linguagem específica. Informe a linguagem escolhida
 Com 30 minutos de desenvolvimento, duas pessoas já devem conseguir abrir o jogo e compartilhar estado. Nos minutos finais, teste de outro computador ou celular. Se a rede local falhar, use o túnel público temporário documentado na [base Docker](05-base-docker.md).
 
 O último pedido à IA pode ser: “revise o projeto contra esta spec; corrija somente impedimentos para uma partida completa e liste o que ficou fora do escopo”.
+
+---
+
+[← Formato e regras](01-formato-e-regras.md) · [Início](../README.md) · [Próximo: bibliotecas →](03-bibliotecas.md)

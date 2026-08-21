@@ -28,4 +28,12 @@
 
 ## URL pública temporária
 
-O Cloudflare Quick Tunnel cria uma URL HTTPS temporária e é compatível com WebSocket. Nesta base ele é iniciado como um serviço Docker e exibe a URL nos logs. Use-o como contingência de rede; a URL muda quando o túnel reinicia.
+O Cloudflare Quick Tunnel cria uma URL HTTPS temporária e é compatível com WebSocket. Nesta base ele é iniciado obrigatoriamente como um serviço Docker e exibe a URL nos logs. A URL muda quando o túnel reinicia e é o único endereço que os jogadores devem usar para acessar a partida.
+
+## Recursos visuais
+
+Para ganhar tempo, é permitido buscar sprites, ícones, tilesets e efeitos sonoros online. Prefira materiais com licença de uso compatível com o jogo e guarde no README o crédito ou a referência exigida pela licença. Use apenas o necessário: um personagem, um cenário simples e indicadores claros costumam ser suficientes para o protótipo.
+
+---
+
+[← Treinamento](02-treinamento-spec-e-ia.md) · [Início](../README.md) · [Próximo: spec do jogo →](04-template-spec-do-jogo.md)

@@ -107,7 +107,7 @@ Você não precisa usar uma linguagem específica. Informe a linguagem escolhida
 
 ## Fase 6 — Feche com teste real
 
-Com 30 minutos de desenvolvimento, duas pessoas já devem conseguir abrir o jogo e compartilhar estado. Nos minutos finais, teste de outro computador ou celular. Se a rede local falhar, use o túnel público temporário documentado na [base Docker](05-base-docker.md).
+Até 17:05, duas pessoas já devem conseguir abrir o jogo e compartilhar estado. Nos minutos finais, prepare o repositório para ser executado pela organização. O teste coletivo será feito a partir da URL pública temporária gerada na máquina da organização.
 
 O último pedido à IA pode ser: “revise o projeto contra esta spec; corrija somente impedimentos para uma partida completa e liste o que ficou fora do escopo”.
 

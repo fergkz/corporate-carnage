@@ -30,6 +30,8 @@
 ## Entrega e teste
 
 - O README do projeto deve informar comando Docker, URL/porta, controles, quantidade de jogadores e objetivo do jogo.
+- Cada participante deve entregar o jogo em um repositório **público** no GitHub até o horário de corte definido para o evento.
+- A versão avaliada será a última versão disponível no repositório no horário de corte. Atualizações enviadas depois desse horário não serão consideradas.
 - Bibliotecas e exemplos técnicos são permitidos. Não parta de um jogo pronto ou de uma mecânica principal já entregue por um template.
 - Após cerca de 30 minutos, dois navegadores devem entrar na mesma sala e visualizar algum estado compartilhado.
 - Antes da apresentação, teste a partida a partir de outra máquina ou celular.

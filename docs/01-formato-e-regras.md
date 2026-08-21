@@ -20,7 +20,7 @@
 
 ## Escopo e execução
 
-- O jogo pode ser 2D ou 3D, com as bibliotecas que o participante preferir.
+- O jogo pode ser 2D ou 3D. Cada participante escolhe linguagem, framework e bibliotecas.
 - A única dependência local é Docker com Docker Compose. Dependências de aplicação e servidor ficam dentro dos containers.
 - Inclua `compose.yaml` e faça o projeto iniciar com `docker compose up --build`.
 - A porta externa recomendada é `8080`. Caso outra porta seja usada, ela deve constar no README.

@@ -1,34 +1,91 @@
-# Treinamento rápido: especificação e IA
+# Treinamento rápido: use uma spec para trabalhar com IA
 
-## Roteiro de 10 minutos
+> Leitura estimada: 6 a 7 minutos.
 
-1. **Ideia em uma frase:** quem joga, o que tenta fazer e qual é a disputa.
-2. **Regras essenciais:** jogadores, controles, vitória e derrota.
-3. **Primeiro jogável:** a menor versão em que duas pessoas já competem.
-4. **Plano por etapas:** conexão, mecânica principal, fim de partida e polimento.
-5. **Trabalho com IA:** peça uma etapa por vez, execute e teste antes de avançar.
+## O objetivo
 
-## Prompt inicial
+O jogo é o exercício; o aprendizado é sair de uma ideia vaga, definir um recorte viável e orientar uma ferramenta de IA até chegar a uma entrega funcional. A ferramenta pode ser um chat no navegador, um agente no editor ou qualquer assistente de código. O método é o mesmo: **decidir o que fazer antes de pedir para gerar código**.
+
+Uma *spec* (especificação) é uma descrição curta e objetiva do que será construído. Ela evita respostas genéricas, reduz retrabalho e dá um critério claro para decidir o que fica de fora.
+
+## Fase 1 — Escolha a menor partida possível
+
+Antes de abrir a ferramenta de IA, escreva uma frase para o jogo:
+
+> De 2 a 5 jogadores disputam uma arena; vence quem fizer mais pontos em três minutos.
+
+Em seguida, responda quatro perguntas:
+
+1. Quem são os jogadores e quantos podem participar?
+2. O que cada um faz repetidamente durante uma partida?
+3. Como alguém vence ou perde?
+4. O que duas pessoas precisam enxergar uma na outra em tempo real?
+
+Não comece com história, personagens, ranking, login ou efeitos. Comece pela ação que torna a partida competitiva. Se essa ação não estiver pronta, o resto não importa.
+
+## Fase 2 — Escreva a spec de uma página
+
+Use o [modelo de especificação](04-template-spec-do-jogo.md). Ela deve conter apenas decisões necessárias para construir e testar o jogo:
 
 ```text
-Quero criar um jogo web multiplayer competitivo para 2 a 5 jogadores.
-
-Conceito: [descreva em uma frase].
-Vitória: [condição objetiva].
-Controles: [teclas/mouse].
-Primeiro marco jogável: duas pessoas entram na mesma sala, veem uma à outra,
-movem-se e conseguem concluir uma partida.
-
-Sugira uma arquitetura mínima usando [biblioteca] e [tecnologia multiplayer].
-Implemente primeiro o marco mínimo em containers Docker. Inclua compose.yaml
-para que `docker compose up --build` inicie tudo e documente a URL de acesso.
-Não adicione login, banco de dados ou recursos fora desse escopo.
+Nome: Arena de Impulso
+Jogadores: 2 a 4
+Objetivo: empurrar os adversários para fora da arena.
+Vitória: último jogador dentro da arena.
+Controles: WASD para mover; espaço para impulso.
+Tempo de partida: até 3 minutos.
+Estado compartilhado: posição, jogador eliminado e fim de partida.
+Primeiro marco: dois jogadores conectam, se veem e se movimentam.
+Fora do escopo: login, ranking, itens, áudio e persistência.
 ```
 
-## Boas práticas
+Essa spec não é um documento burocrático. Ela é o contexto que será repetido para a IA sempre que surgir uma decisão ou mudança de rumo.
 
-- Mantenha a especificação atualizada.
-- Faça pedidos pequenos e teste cada marco.
-- Suba o ambiente Docker cedo.
-- Aos 30 minutos, valide dois navegadores na mesma sala.
-- Corte funcionalidades que ameaçarem a partida completa.
+## Fase 3 — Peça um plano, não o jogo inteiro
+
+Em um chat no navegador, envie a spec e peça primeiro uma arquitetura mínima. Em um agente de código, salve a spec no repositório e peça que ele a leia antes de alterar arquivos.
+
+```text
+Leia esta especificação e proponha o menor plano técnico para entregar o primeiro marco.
+O jogo deve rodar no navegador, ter servidor multiplayer e iniciar com Docker Compose.
+Escolha apenas recursos necessários para dois jogadores entrarem na mesma sala,
+verem um ao outro e se moverem. Explique os arquivos que serão criados antes de escrever código.
+```
+
+Revise a resposta. Se ela sugerir banco de dados, autenticação ou arquitetura complexa, corte. Para este evento, uma solução simples que roda vale mais que uma solução completa no papel.
+
+## Fase 4 — Desenvolva por marcos curtos
+
+Peça uma mudança por vez, execute e teste. Uma sequência recomendada é:
+
+1. Página do jogo abre pelo navegador dentro do Docker.
+2. Servidor aceita duas conexões.
+3. Os dois jogadores enxergam movimento ou estado compartilhado.
+4. A mecânica competitiva funciona.
+5. Existe vitória, derrota e reinício.
+
+```text
+Implemente somente o marco 2. Preserve o que já funciona.
+Adicione uma sala única com dois jogadores e envie ao navegador o estado necessário.
+Não implemente placar, tela final ou efeitos visuais ainda.
+Ao terminar, diga como testar em dois navegadores.
+```
+
+Se der erro, informe o erro completo e o que você esperava que acontecesse. Não peça apenas “corrija”; diga em qual comando ou tela o problema apareceu.
+
+## Fase 5 — Use a ferramenta no lugar certo
+
+| Situação | Melhor uso da IA |
+| --- | --- |
+| Ideia ainda incerta | Chat no navegador para comparar regras e cortar escopo. |
+| Projeto local aberto | Agente de código para criar arquivos, alterar código e explicar comandos. |
+| Erro de execução | Envie a mensagem de erro, o arquivo envolvido e o comportamento esperado. |
+| Falta pouco tempo | Peça para priorizar uma partida completa e listar o que deve ser removido. |
+
+Você não precisa usar uma linguagem específica. Informe a linguagem escolhida na primeira conversa e peça para a IA respeitar o Docker Compose do projeto. Se mudar de ferramenta no meio do hackathon, leve junto a spec e o estado atual do projeto.
+
+## Fase 6 — Feche com teste real
+
+Com 30 minutos de desenvolvimento, duas pessoas já devem conseguir abrir o jogo e compartilhar estado. Nos minutos finais, teste de outro computador ou celular. Se a rede local falhar, use o túnel público temporário documentado na [base Docker](05-base-docker.md).
+
+O último pedido à IA pode ser: “revise o projeto contra esta spec; corrija somente impedimentos para uma partida completa e liste o que ficou fora do escopo”.

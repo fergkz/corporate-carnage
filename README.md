@@ -1,6 +1,6 @@
 # Hackathon de Jogos no Navegador
 
-Este repositório reúne as regras do evento, o material de apoio e uma base executável para iniciar jogos multiplayer competitivos no navegador.
+Este repositório reúne as regras do evento, o material de apoio e uma base executável de referência para iniciar jogos multiplayer competitivos no navegador.
 
 ## Comece por aqui
 
@@ -12,3 +12,7 @@ Este repositório reúne as regras do evento, o material de apoio e uma base exe
 ## Objetivo
 
 Em duas horas, entregue uma partida multiplayer competitiva, curta e jogável. O desafio é transformar uma ideia em uma especificação objetiva e usá-la para orientar o desenvolvimento com IA.
+
+## Liberdade tecnológica
+
+Cada participante escolhe sua linguagem, framework e biblioteca. A implementação JavaScript com Socket.IO existente neste repositório é somente uma referência que já funciona; ela pode ser adaptada, substituída por outra linguagem ou ignorada.

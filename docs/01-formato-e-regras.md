@@ -4,12 +4,12 @@
 
 | Horário | Atividade |
 | --- | --- |
-| 16:00–16:10 | Treinamento rápido: especificação e trabalho com IA |
-| 16:10–16:20 | Escolha da ideia e fechamento da especificação |
-| 16:20–17:50 | Desenvolvimento do protótipo |
-| 17:50 | Horário de corte para atualização do repositório público no GitHub |
-| 17:50–18:20 | Teste coletivo dos jogos na máquina da organização e preenchimento do formulário |
-| 18:20–18:30 | Apuração, anúncio do resultado e retrospectiva curta |
+| 16:00–16:15 | Treinamento, escolha da ideia e fechamento da especificação |
+| 16:15–16:20 | Preparação da base |
+| 16:20–17:40 | Desenvolvimento do protótipo, conforme os marcos abaixo |
+| 17:40 | Horário de corte para atualização do repositório público no GitHub e início das partidas de teste |
+| 17:40–17:55 | Teste coletivo dos jogos na máquina da organização e preenchimento do formulário |
+| 17:55–18:00 | Apuração, anúncio do resultado e retrospectiva curta |
 
 ## Requisitos obrigatórios
 
@@ -31,16 +31,16 @@
 
 ## Marcos de desenvolvimento
 
-A base Docker já está disponível e funcionando; ela não precisa ser recriada. O relógio abaixo começa às 16:20 e serve para mostrar exatamente quando o desenvolvimento do jogo começa e quando é hora de cortar escopo.
+A base Docker já está disponível e funcionando; ela não precisa ser recriada. As fases abaixo mostram exatamente quando o desenvolvimento do jogo começa e quando é hora de cortar escopo.
 
 | Horário | Fase | Resultado esperado | Se não chegou lá |
 | --- | --- | --- | --- |
-| 16:20–16:30 | Preparação da base | Rodar a base, abrir a URL do túnel e criar o repositório público do jogo. | Não altere o jogo ainda: faça o Compose funcionar e publique o repositório primeiro. |
-| 16:30–16:45 | Primeiro código do jogo | Substituir ou adaptar a tela de exemplo; controles locais e cenário básico já aparecem no navegador. | Use formas simples e uma única tela. Não procure arte nem crie menus. |
-| 16:45–17:05 | Multiplayer | Dois navegadores acessam a mesma URL e enxergam movimento ou estado compartilhado. | Reduza para uma sala e uma única ação sincronizada. |
-| 17:05–17:25 | Mecânica competitiva | A ação que define o jogo funciona: atacar, empurrar, coletar, correr ou pontuar. | Remova poderes, mapas extras, itens e mecânicas secundárias. |
-| 17:25–17:40 | Partida completa | Vitória, derrota e reinício funcionam em uma partida de até cinco minutos. | Pare de adicionar recursos; corrija apenas o caminho principal da partida. |
-| 17:40–17:50 | Entrega | README revisado, última versão enviada ao GitHub e repositório pronto para ser clonado. | Priorize o `git push`, o Docker Compose e a instrução de execução. |
+| 16:00–16:15 | Treinamento, ideia e spec | Participante entende a base, escolhe o jogo e fecha uma especificação curta. | Escolha uma única mecânica competitiva e preencha o modelo de spec. |
+| 16:15–16:20 | Preparação da base | Base executada, URL do túnel visualizada e repositório público criado. | Não altere o jogo ainda: faça o Compose funcionar e publique o repositório primeiro. |
+| 16:20–16:45 | Primeiro código do jogo | Tela de exemplo substituída ou adaptada; controles locais e cenário básico já aparecem no navegador. | Use formas simples e uma única tela. Não procure arte nem crie menus. |
+| 16:45–17:00 | Multiplayer | Dois navegadores acessam a mesma URL e enxergam movimento ou estado compartilhado. | Reduza para uma sala e uma única ação sincronizada. |
+| 17:00–17:25 | Mecânica competitiva | A ação que define o jogo funciona: atacar, empurrar, coletar, correr ou pontuar. | Remova poderes, mapas extras, itens e mecânicas secundárias. |
+| 17:25–17:40 | Partida completa e entrega | Vitória, derrota e reinício funcionam; README revisado e última versão enviada ao GitHub. | Pare de adicionar recursos; priorize o `git push`, o Docker Compose e uma partida estável. |
 
 ## Entrega e teste
 

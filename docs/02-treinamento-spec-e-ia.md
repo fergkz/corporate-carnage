@@ -107,7 +107,7 @@ Você não precisa usar uma linguagem específica. Informe a linguagem escolhida
 
 ## Fase 6 — Feche com teste real
 
-Até 17:05, duas pessoas já devem conseguir abrir o jogo e compartilhar estado. Nos minutos finais, prepare o repositório para ser executado pela organização. O teste coletivo será feito a partir da URL pública temporária gerada na máquina da organização.
+Até 17:00, duas pessoas já devem conseguir abrir o jogo e compartilhar estado. Das 17:25 às 17:40, prepare o repositório para ser executado pela organização. O teste coletivo será feito a partir da URL pública temporária gerada na máquina da organização.
 
 O último pedido à IA pode ser: “revise o projeto contra esta spec; corrija somente impedimentos para uma partida completa e liste o que ficou fora do escopo”.
 

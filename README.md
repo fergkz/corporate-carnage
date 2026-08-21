@@ -11,7 +11,7 @@ Este repositório reúne as regras do evento, o material de apoio e uma base exe
 
 ## Objetivo
 
-Em 90 minutos de desenvolvimento, entregue uma partida multiplayer competitiva, curta e jogável. O desafio é transformar uma ideia em uma especificação objetiva e usá-la para orientar o desenvolvimento com IA.
+Até as 17:40, entregue uma partida multiplayer competitiva, curta e jogável. O desafio é transformar uma ideia em uma especificação objetiva e usá-la para orientar o desenvolvimento com IA.
 
 ## Liberdade tecnológica
 

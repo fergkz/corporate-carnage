@@ -9,6 +9,7 @@ Copie este modelo para planejar seu jogo antes de desenvolver.
 - **Participantes:** 2–5 jogadores
 - **Estilo:** 2D ou 3D
 - **Bibliotecas escolhidas:**
+- **Porta interna do jogo (`GAME_PORT`):**
 
 ## Partida
 

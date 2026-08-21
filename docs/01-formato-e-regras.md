@@ -23,9 +23,9 @@
 - O jogo pode ser 2D ou 3D. Cada participante escolhe linguagem, framework e bibliotecas.
 - A única dependência local é Docker com Docker Compose. Dependências de aplicação e servidor ficam dentro dos containers.
 - Inclua `compose.yaml` e faça o projeto iniciar com `docker compose up --build`.
-- A porta externa recomendada é `8080`. Caso outra porta seja usada, ela deve constar no README.
+- Inclua e mantenha ativo o serviço Cloudflare Quick Tunnel. A URL pública temporária é o meio padrão de acesso dos jogadores.
+- A porta do jogo é livre. Documente a porta escolhida e, quando necessário, configure `GAME_PORT` e `HOST_PORT` no Compose.
 - Não são exigidos login, banco de dados, persistência, ranking ou publicação profissional.
-- Caso a rede local impeça o acesso entre dispositivos, uma URL pública temporária por Cloudflare Quick Tunnel é permitida.
 
 ## Entrega e teste
 

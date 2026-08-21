@@ -1,10 +1,11 @@
 {
-  "name": "hackathon-game-starter",
-  "version": "1.0.0",
+  "name": "corporate-carnage",
+  "version": "0.1.0",
   "private": true,
-  "description": "Base multiplayer para o hackathon",
+  "description": "Top-down PvPvE multiplayer em um escritório tomado por zumbis",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "check": "node --check server.js && node --input-type=module --check < public/game.js"
   },
   "dependencies": {
     "express": "^5.1.0",

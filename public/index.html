@@ -3,75 +3,80 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Base multiplayer</title>
+    <meta name="theme-color" content="#05090c" />
+    <title>Corporate Carnage</title>
     <style>
-      :root { color-scheme: dark; font-family: system-ui, sans-serif; }
-      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #111827; }
-      main { width: min(94vw, 680px); } h1 { margin: 0 0 8px; } p { color: #cbd5e1; }
-      #arena { width: 640px; max-width: 100%; height: 360px; position: relative; overflow: hidden; border: 2px solid #38bdf8; border-radius: 12px; background: #1e293b; }
-      .player { position: absolute; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; transform: translate(-50%, -50%); color: #0f172a; font-size: 10px; font-weight: 800; user-select: none; }
-      #status { font-size: 14px; } input { padding: 8px; border-radius: 6px; border: 0; }
+      @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&display=swap');
+      :root { color-scheme:dark; font-family:Inter,system-ui,sans-serif; --amber:#f3a229; --cyan:#54d6d2; }
+      * { box-sizing:border-box; }
+      html,body { width:100%; height:100%; margin:0; overflow:hidden; background:#030608; }
+      canvas { display:block; }
+      #scene { position:fixed; inset:0; }
+      .overlay { position:fixed; inset:0; pointer-events:none; z-index:5; }
+      #vignette { background:radial-gradient(circle,transparent 52%,rgba(0,0,0,.68) 112%); }
+      #damage { opacity:0; transition:opacity .16s; background:radial-gradient(circle,transparent 25%,rgba(150,0,0,.72)); }
+      #hud { padding:24px 28px; display:grid; grid-template:auto 1fr auto/1fr 1fr 1fr; text-shadow:0 2px 5px #000; }
+      #brand { grid-column:1; letter-spacing:.18em; font:600 13px 'Barlow Condensed'; color:#aebac0; }
+      #brand strong { color:var(--amber); font-size:19px; display:block; letter-spacing:.1em; }
+      #timer { grid-column:2; justify-self:center; font:700 34px 'Barlow Condensed'; letter-spacing:.08em; }
+      #timer small { font:500 10px Inter; display:block; text-align:center; color:#93a1a7; letter-spacing:.2em; }
+      #connection { grid-column:3; justify-self:end; color:#8d9a9f; font-size:11px; letter-spacing:.12em; }
+      #connection::before { content:''; display:inline-block; width:6px; height:6px; margin-right:7px; border-radius:50%; background:#50d89d; box-shadow:0 0 10px #50d89d; }
+      #health { grid-column:1; grid-row:3; align-self:end; width:220px; }
+      .label { color:#8d9a9f; font:600 10px Inter; letter-spacing:.16em; margin-bottom:7px; }
+      .bar { height:6px; background:#1c2529; transform:skewX(-16deg); overflow:hidden; }
+      #health-fill { height:100%; width:100%; background:linear-gradient(90deg,#ba302b,#f2a03a); box-shadow:0 0 14px #e65236; transition:width .15s; }
+      #health-number { font:700 29px 'Barlow Condensed'; margin-top:4px; }
+      #shield-bar { margin-top:8px; opacity:.35; transition:opacity .2s; }
+      #shield-bar.active { opacity:1; }
+      #shield-fill { height:100%; width:0%; background:linear-gradient(90deg,#2b6fa0,#54d6d2); box-shadow:0 0 12px #54d6d2; transition:width .15s; }
+      #weapon { grid-column:3; grid-row:3; justify-self:end; align-self:end; text-align:right; }
+      #weapon-name { font:700 27px 'Barlow Condensed'; letter-spacing:.1em; }
+      #ammo { color:var(--amber); font:700 18px 'Barlow Condensed'; letter-spacing:.08em; }
+      #grenades { margin-top:6px; color:#8fd3d0; font:600 11px Inter; letter-spacing:.1em; }
+      #grenades b { color:#fff; }
+      #weapon-slots { display:flex; gap:6px; justify-content:end; margin-top:8px; }
+      .slot { min-width:54px; border:1px solid #3c484c; padding:4px 8px; color:#77858a; font:600 10px Inter; background:rgba(5,10,12,.6); }
+      .slot.active { color:#fff; border-color:var(--amber); box-shadow:inset 0 -2px var(--amber); }
+      .slot.locked { opacity:.3; }
+      #scoreboard { position:fixed; right:28px; top:90px; min-width:210px; z-index:6; font-size:12px; pointer-events:none; }
+      .score-head,.score-row { display:grid; grid-template-columns:1fr 38px 34px; gap:10px; padding:7px 10px; }
+      .score-head { color:#718087; letter-spacing:.12em; font-size:9px; border-bottom:1px solid #303a3d; }
+      .score-row { background:linear-gradient(90deg,rgba(7,13,16,.8),rgba(7,13,16,.35)); border-left:2px solid transparent; }
+      .score-row.self { border-color:var(--amber); color:#fff; }
+      #announcement { position:fixed; left:50%; top:24%; transform:translate(-50%,-50%); text-align:center; z-index:12; opacity:0; transition:opacity .25s; pointer-events:none; }
+      #announcement.show { opacity:1; } #announcement h2 { margin:0; font:700 clamp(32px,5vw,68px) 'Barlow Condensed'; letter-spacing:.08em; color:white; }
+      #announcement p { margin:5px; color:var(--amber); letter-spacing:.22em; font-size:12px; }
+      #killfeed { position:fixed; top:90px; left:28px; z-index:7; color:#d8e0e3; font:500 11px Inter; }
+      .kill { border-left:2px solid #bf3c35; padding:6px 9px; margin-bottom:4px; background:rgba(6,10,12,.55); animation:fade 4s forwards; }
+      @keyframes fade { 75%{opacity:1} 100%{opacity:0} }
+      #start { position:fixed; inset:0; z-index:20; display:grid; place-items:center; background:radial-gradient(circle at 50% 35%,rgba(24,40,43,.72),rgba(2,5,7,.97)); }
+      .start-card { width:min(520px,calc(100vw - 36px)); padding:42px; border:1px solid #344247; background:linear-gradient(145deg,rgba(16,25,29,.96),rgba(5,9,11,.98)); box-shadow:0 30px 90px #000; position:relative; }
+      .start-card::before { content:'OPERAÇÃO 08.21'; position:absolute; top:-1px; left:40px; padding:5px 10px; background:var(--amber); color:#16110a; font:700 9px Inter; letter-spacing:.18em; }
+      .start-card h1 { margin:10px 0 4px; font:700 clamp(42px,9vw,72px)/.85 'Barlow Condensed'; letter-spacing:.02em; }
+      .start-card h1 span { color:var(--amber); } .start-card>p { color:#95a4a9; line-height:1.6; font-size:13px; margin:18px 0 28px; }
+      .field { display:flex; gap:8px; } input,button { height:48px; border:1px solid #3a474c; font:600 12px Inter; letter-spacing:.08em; }
+      input { flex:1; min-width:0; padding:0 14px; background:#080d0f; color:white; outline:none; } input:focus { border-color:var(--amber); }
+      button { padding:0 20px; background:var(--amber); color:#171008; cursor:pointer; border-color:var(--amber); }
+      .controls { display:flex; gap:18px; margin-top:24px; color:#77868b; font-size:10px; flex-wrap:wrap; } .controls b { color:#c7d0d3; }
+      #commands { position:fixed; left:50%; bottom:18px; transform:translateX(-50%); z-index:7; padding:6px 10px; color:rgba(220,230,232,.52); background:rgba(5,9,11,.42); font:500 9px Inter; letter-spacing:.08em; pointer-events:none; white-space:nowrap; }
+      #pickup-toast { position:fixed; left:50%; top:66%; transform:translate(-50%,-50%); z-index:13; opacity:0; padding:9px 16px; border:1px solid var(--amber); color:#fff; background:rgba(8,12,13,.9); font:600 11px Inter; letter-spacing:.13em; transition:opacity .2s; pointer-events:none; }
+      #pickup-toast.show { opacity:1; }
+      @media(max-width:700px){#scoreboard{display:none}.start-card{padding:30px 24px}#hud{padding:16px}#weapon-slots{display:none}}
     </style>
   </head>
   <body>
-    <main>
-      <h1>Base multiplayer</h1>
-      <p>Use as setas ou WASD para mover. Abra este link em outro dispositivo para validar a conexão.</p>
-      <input id="name" maxlength="18" placeholder="Seu nome" aria-label="Seu nome" />
-      <p id="status">Conectando…</p>
-      <div id="arena" aria-label="Arena do jogo"></div>
-    </main>
-    <script src="/socket.io/socket.io.js"></script>
-    <script>
-      const socket = io();
-      const arena = document.querySelector('#arena');
-      const status = document.querySelector('#status');
-      const nameInput = document.querySelector('#name');
-      const players = new Map();
-      const position = { x: 320, y: 180 };
-
-      function render(player) {
-        players.set(player.id, player);
-        let element = document.querySelector(`[data-player-id="${player.id}"]`);
-        if (!element) {
-          element = document.createElement('div');
-          element.className = 'player';
-          element.dataset.playerId = player.id;
-          arena.append(element);
-        }
-        element.style.left = `${player.x}px`;
-        element.style.top = `${player.y}px`;
-        element.style.background = player.color;
-        element.textContent = player.name.slice(0, 3).toUpperCase();
-        status.textContent = `${players.size} jogador(es) conectado(s)`;
-      }
-
-      socket.on('state', (state) => {
-        Object.values(state).forEach(render);
-        const self = state[socket.id];
-        if (self) Object.assign(position, { x: self.x, y: self.y });
-      });
-      socket.on('player-joined', render);
-      socket.on('player-moved', render);
-      socket.on('player-left', (id) => {
-        players.delete(id);
-        document.querySelector(`[data-player-id="${id}"]`)?.remove();
-        status.textContent = `${players.size} jogador(es) conectado(s)`;
-      });
-      socket.on('connect', () => { status.textContent = 'Conectado'; });
-
-      const controls = { ArrowUp: [0, -12], w: [0, -12], ArrowDown: [0, 12], s: [0, 12], ArrowLeft: [-12, 0], a: [-12, 0], ArrowRight: [12, 0], d: [12, 0] };
-      addEventListener('keydown', (event) => {
-        const move = controls[event.key];
-        if (!move || event.target === nameInput) return;
-        event.preventDefault();
-        position.x = Math.max(18, Math.min(622, position.x + move[0]));
-        position.y = Math.max(18, Math.min(342, position.y + move[1]));
-        const self = players.get(socket.id);
-        if (self) render({ ...self, ...position });
-        socket.emit('move', position);
-      });
-      nameInput.addEventListener('change', () => socket.emit('rename', nameInput.value));
-    </script>
+    <canvas id="scene"></canvas>
+    <div id="vignette" class="overlay"></div><div id="damage" class="overlay"></div>
+    <div id="hud" class="overlay">
+      <div id="brand"><strong>CORPORATE CARNAGE</strong>CONTENÇÃO EXECUTIVA</div>
+      <div id="timer"><small>TEMPO RESTANTE</small><span>03:00</span></div><div id="connection">CONECTANDO</div>
+      <div id="health"><div class="label">INTEGRIDADE</div><div class="bar"><div id="health-fill"></div></div><div id="health-number">100</div><div class="bar" id="shield-bar"><div id="shield-fill"></div></div></div>
+      <div id="weapon"><div class="label">EQUIPAMENTO ATIVO</div><div id="weapon-name">FACA TÁTICA</div><div id="ammo">∞</div><div id="weapon-slots"><div class="slot active">1 FACA</div><div class="slot locked">2 PISTOLA</div><div class="slot locked">3 RIFLE</div><div class="slot locked">4 ESCOPETA</div></div><div id="grenades">GRANADAS <b id="grenade-count">0</b></div></div>
+    </div>
+    <div id="scoreboard"></div><div id="killfeed"></div><div id="announcement"><h2></h2><p></p></div>
+    <div id="commands">WASD MOVER · MOUSE MIRAR · CLIQUE ATACAR · 1–4 TROCAR ITEM · G GRANADA</div><div id="pickup-toast"></div>
+    <div id="start"><div class="start-card"><h1>CORPORATE<br><span>CARNAGE</span></h1><p>O expediente acabou. Visto de cima, você entra apenas com uma faca: explore o escritório para encontrar armas e munição, escudos, curativos e granadas, elimine infectados e supere os agentes rivais.</p><div class="field"><input id="name" maxlength="16" value="Fernando" aria-label="Codinome"><button id="deploy">INICIAR OPERAÇÃO</button></div><div class="controls"><span><b>WASD</b> mover</span><span><b>MOUSE</b> mirar</span><span><b>CLIQUE</b> atacar</span><span><b>1–4</b> inventário</span><span><b>G</b> granada</span></div></div></div>
+    <script src="/socket.io/socket.io.js"></script><script type="module" src="/game.js"></script>
   </body>
 </html>

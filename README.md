@@ -1,18 +1,62 @@
-# Hackathon de Jogos no Navegador
+# Corporate Carnage
 
-Este repositório reúne as regras do evento, o material de apoio e uma base executável de referência para iniciar jogos multiplayer competitivos no navegador.
+Shooter top-down multiplayer competitivo no navegador, visto de cima como um plano de escritório. Agentes disputam uma operação de contenção em um escritório tomado por infectados. Elimine zumbis e jogadores rivais antes do fim da rodada.
 
-## Comece por aqui
+## Executar
 
-1. Leia as [regras e o formato](docs/01-formato-e-regras.md).
-2. Preencha a [especificação do seu jogo](docs/04-template-spec-do-jogo.md).
-3. Consulte as [opções de bibliotecas](docs/03-bibliotecas.md).
-4. Siga a [base Docker](docs/05-base-docker.md) para iniciar o projeto.
+```bash
+docker compose up --build
+```
 
-## Objetivo
+Copie a **URL PÚBLICA DO JOGO** mostrada pelo serviço `tunnel` e envie aos jogadores. O acesso da partida deve ser feito por essa URL.
 
-Até as 17:40, entregue uma partida multiplayer competitiva, curta e jogável. O desafio é transformar uma ideia em uma especificação objetiva e usá-la para orientar o desenvolvimento com IA.
+## Partida
 
-## Liberdade tecnológica
+- 2 a 5 jogadores em uma única arena.
+- Rodadas de 3 minutos com reinício automático.
+- Zumbi eliminado: **+1 ponto**.
+- Jogador rival eliminado: **+5 pontos**.
+- Vence quem tiver mais pontos quando o cronômetro terminar.
+- Vida, dano, movimentação, zumbis, pontuação e resultado são validados pelo servidor.
+- Todo jogador começa somente com uma faca, que nunca é perdida.
+- Pistola, rifle, escopeta e suas munições precisam ser coletados no escritório.
+- Escudo, curativos e granadas também aparecem como pickups pelo mapa.
+- Escudo absorve dano (de tiro, faca ou mordida) até se esgotar.
+- Curativos restauram parte da vida; granadas causam dano em área ao redor do impacto.
+- Armas, escudo e granadas coletados são perdidos ao morrer; a faca permanece disponível.
+- Os itens retornam ao cenário algum tempo depois de serem coletados.
 
-Cada participante escolhe sua linguagem, framework e biblioteca. A implementação JavaScript com Socket.IO existente neste repositório é somente uma referência que já funciona; ela pode ser adaptada, substituída por outra linguagem ou ignorada.
+## Controles
+
+| Ação | Controle |
+| --- | --- |
+| Mover | `WASD` |
+| Mirar | Mouse |
+| Atirar | Botão esquerdo |
+| Faca tática | `1` |
+| Pistola P9 | `2` |
+| Rifle AR-21 | `3` |
+| Escopeta M12 | `4` |
+| Lançar granada | `G` |
+
+O mouse não é capturado: a mira segue o cursor livremente pela tela, como em Project Zomboid.
+
+## Tecnologia
+
+- Canvas 2D nativo para renderização top-down (sem motor 3D).
+- Socket.IO para sincronização em tempo real.
+- Node.js/Express como servidor autoritativo.
+- Docker Compose e Cloudflare Quick Tunnel para entrega.
+
+## Estrutura
+
+- `server.js`: simulação 2D, colisões, combate, zumbis e regras da rodada.
+- `public/game.js`: renderização Canvas 2D, câmera que segue o jogador, controles e sincronização visual.
+- `public/index.html`: interface e HUD.
+- `public/assets/sprites/`: sprites de personagens, zumbis, armas e itens (ver créditos abaixo).
+
+O endpoint `GET /health` é usado pelo Compose antes de iniciar o túnel.
+
+## Créditos de arte
+
+Os sprites de personagem, zumbis, armas e itens vêm do pacote **"Zombie Apocalypse Tileset"** de **Ittai Manero** (itch.io), licenciado para uso livre em projetos pessoais e comerciais. O ícone de rifle foi montado à mão na mesma paleta, já que o pacote original não incluía essa arma. Paredes, piso e mobília do escritório continuam sendo desenhados por código.

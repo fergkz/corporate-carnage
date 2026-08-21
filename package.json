@@ -1,0 +1,13 @@
+{
+  "name": "hackathon-game-starter",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Base multiplayer para o hackathon",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "socket.io": "^4.8.1"
+  }
+}

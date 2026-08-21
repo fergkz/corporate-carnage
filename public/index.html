@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Base multiplayer</title>
+    <style>
+      :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #111827; }
+      main { width: min(94vw, 680px); } h1 { margin: 0 0 8px; } p { color: #cbd5e1; }
+      #arena { width: 640px; max-width: 100%; height: 360px; position: relative; overflow: hidden; border: 2px solid #38bdf8; border-radius: 12px; background: #1e293b; }
+      .player { position: absolute; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; transform: translate(-50%, -50%); color: #0f172a; font-size: 10px; font-weight: 800; user-select: none; }
+      #status { font-size: 14px; } input { padding: 8px; border-radius: 6px; border: 0; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Base multiplayer</h1>
+      <p>Use as setas ou WASD para mover. Abra este link em outro dispositivo para validar a conexão.</p>
+      <input id="name" maxlength="18" placeholder="Seu nome" aria-label="Seu nome" />
+      <p id="status">Conectando…</p>
+      <div id="arena" aria-label="Arena do jogo"></div>
+    </main>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      const socket = io();
+      const arena = document.querySelector('#arena');
+      const status = document.querySelector('#status');
+      const nameInput = document.querySelector('#name');
+      const players = new Map();
+      const position = { x: 320, y: 180 };
+
+      function render(player) {
+        players.set(player.id, player);
+        let element = document.querySelector(`[data-player-id="${player.id}"]`);
+        if (!element) {
+          element = document.createElement('div');
+          element.className = 'player';
+          element.dataset.playerId = player.id;
+          arena.append(element);
+        }
+        element.style.left = `${player.x}px`;
+        element.style.top = `${player.y}px`;
+        element.style.background = player.color;
+        element.textContent = player.name.slice(0, 3).toUpperCase();
+        status.textContent = `${players.size} jogador(es) conectado(s)`;
+      }
+
+      socket.on('state', (state) => {
+        Object.values(state).forEach(render);
+        const self = state[socket.id];
+        if (self) Object.assign(position, { x: self.x, y: self.y });
+      });
+      socket.on('player-joined', render);
+      socket.on('player-moved', render);
+      socket.on('player-left', (id) => {
+        players.delete(id);
+        document.querySelector(`[data-player-id="${id}"]`)?.remove();
+        status.textContent = `${players.size} jogador(es) conectado(s)`;
+      });
+      socket.on('connect', () => { status.textContent = 'Conectado'; });
+
+      const controls = { ArrowUp: [0, -12], w: [0, -12], ArrowDown: [0, 12], s: [0, 12], ArrowLeft: [-12, 0], a: [-12, 0], ArrowRight: [12, 0], d: [12, 0] };
+      addEventListener('keydown', (event) => {
+        const move = controls[event.key];
+        if (!move || event.target === nameInput) return;
+        event.preventDefault();
+        position.x = Math.max(18, Math.min(622, position.x + move[0]));
+        position.y = Math.max(18, Math.min(342, position.y + move[1]));
+        const self = players.get(socket.id);
+        if (self) render({ ...self, ...position });
+        socket.emit('move', position);
+      });
+      nameInput.addEventListener('change', () => socket.emit('rename', nameInput.value));
+    </script>
+  </body>
+</html>

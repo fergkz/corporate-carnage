@@ -62,6 +62,15 @@
       #commands { position:fixed; left:50%; bottom:18px; transform:translateX(-50%); z-index:7; padding:6px 10px; color:rgba(220,230,232,.52); background:rgba(5,9,11,.42); font:500 9px Inter; letter-spacing:.08em; pointer-events:none; white-space:nowrap; }
       #pickup-toast { position:fixed; left:50%; top:66%; transform:translate(-50%,-50%); z-index:13; opacity:0; padding:9px 16px; border:1px solid var(--amber); color:#fff; background:rgba(8,12,13,.9); font:600 11px Inter; letter-spacing:.13em; transition:opacity .2s; pointer-events:none; }
       #pickup-toast.show { opacity:1; }
+      #roundend { position:fixed; inset:0; z-index:21; display:none; place-items:center; background:radial-gradient(circle at 50% 35%,rgba(24,40,43,.72),rgba(2,5,7,.97)); }
+      #roundend-scoreboard { margin:18px 0 24px; }
+      #roundend-scoreboard .score-head, #roundend-scoreboard .score-row { display:grid; grid-template-columns:1fr 60px 50px; gap:10px; padding:8px 10px; font-size:13px; }
+      #roundend-scoreboard .score-head { color:#718087; letter-spacing:.12em; font-size:9px; border-bottom:1px solid #303a3d; }
+      #roundend-scoreboard .score-row { background:linear-gradient(90deg,rgba(7,13,16,.8),rgba(7,13,16,.35)); border-left:2px solid transparent; color:#d8e0e3; }
+      #roundend-scoreboard .score-row.self { border-color:var(--amber); color:#fff; }
+      #roundend-ready { width:100%; }
+      #roundend-ready:disabled { opacity:.6; cursor:default; }
+      #roundend-status { margin-top:14px; color:#8d9a9f; font-size:11px; letter-spacing:.1em; text-align:center; }
       @media(max-width:700px){#scoreboard{display:none}.start-card{padding:30px 24px}#hud{padding:16px}#weapon-slots{display:none}}
     </style>
   </head>
@@ -76,7 +85,8 @@
     </div>
     <div id="scoreboard"></div><div id="killfeed"></div><div id="announcement"><h2></h2><p></p></div>
     <div id="commands">WASD MOVER · MOUSE MIRAR · CLIQUE ATACAR · 1–4 TROCAR ITEM · G GRANADA</div><div id="pickup-toast"></div>
-    <div id="start"><div class="start-card"><h1>CORPORATE<br><span>CARNAGE</span></h1><p>O expediente acabou. Visto de cima, você entra apenas com uma faca: explore o escritório para encontrar armas e munição, escudos, curativos e granadas, elimine infectados e supere os agentes rivais.</p><div class="field"><input id="name" maxlength="16" value="Fernando" aria-label="Codinome"><button id="deploy">INICIAR OPERAÇÃO</button></div><div class="controls"><span><b>WASD</b> mover</span><span><b>MOUSE</b> mirar</span><span><b>CLIQUE</b> atacar</span><span><b>1–4</b> inventário</span><span><b>G</b> granada</span></div></div></div>
+    <div id="start"><div class="start-card"><h1>CORPORATE<br><span>CARNAGE</span></h1><p>O expediente acabou. Visto de cima, você entra apenas com uma faca: explore o escritório para encontrar armas e munição, escudos, curativos e granadas, elimine infectados e supere os agentes rivais.</p><div class="field"><input id="name" maxlength="16" placeholder="Seu codinome" aria-label="Codinome"><button id="deploy">INICIAR OPERAÇÃO</button></div><div class="controls"><span><b>WASD</b> mover</span><span><b>MOUSE</b> mirar</span><span><b>CLIQUE</b> atacar</span><span><b>1–4</b> inventário</span><span><b>G</b> granada</span></div></div></div>
+    <div id="roundend"><div class="start-card"><h1>FIM DA<br><span>OPERAÇÃO</span></h1><div id="roundend-scoreboard"></div><button id="roundend-ready">PRÓXIMA PARTIDA</button><div id="roundend-status"></div></div></div>
     <script src="/socket.io/socket.io.js"></script><script type="module" src="/game.js"></script>
   </body>
 </html>

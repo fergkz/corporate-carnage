@@ -41,6 +41,10 @@ const sprites = {
   healthIcon: loadImage('icon_health.png'),
   flash: { pistol: loadImage('flash_pistol.png'), shotgun: loadImage('flash_shotgun.png') },
   knifeSwipe: loadImage('swipe_knife.png'),
+  corpse: loadImage('corpse.png'),
+  explosion: loadImage('explosion.png'),
+  bloodBurst: loadImage('blood_burst.png'),
+  bloodStain: loadImage('blood_stain.png'),
 };
 
 function intToRgb(colorInt) {
@@ -118,6 +122,8 @@ const ui = {
   slots: [...document.querySelectorAll('.slot')], announcement: document.querySelector('#announcement'), damage: document.querySelector('#damage'),
   killfeed: document.querySelector('#killfeed'), ammo: document.querySelector('#ammo'), pickup: document.querySelector('#pickup-toast'),
   shieldBar: document.querySelector('#shield-bar'), shieldFill: document.querySelector('#shield-fill'), grenadeCount: document.querySelector('#grenade-count'),
+  roundend: document.querySelector('#roundend'), roundendScoreboard: document.querySelector('#roundend-scoreboard'),
+  roundendReady: document.querySelector('#roundend-ready'), roundendStatus: document.querySelector('#roundend-status'),
 };
 
 let world = { walls: [], props: [], arena: 22 };
@@ -138,6 +144,8 @@ const targets = new Map(); // id -> latest snapshot data
 const pickupsState = [];
 const tracers = [];
 const explosions = [];
+const corpses = [];
+const bloodBursts = [];
 let matchEndsAt = Date.now();
 
 // ---------------------------------------------------------------------------
@@ -616,25 +624,106 @@ function drawExplosions(dt) {
     if (explosion.life <= 0) { explosions.splice(i, 1); continue; }
     const t = 1 - Math.max(0, explosion.life / explosion.duration);
     ctx.save();
-    ctx.globalAlpha = Math.max(0, 1 - t) * 0.85;
-    ctx.strokeStyle = '#ffb04a';
-    ctx.lineWidth = 0.12;
-    ctx.beginPath(); ctx.arc(explosion.x, explosion.y, explosion.radius * t, 0, Math.PI * 2); ctx.stroke();
-    const glow = ctx.createRadialGradient(explosion.x, explosion.y, 0, explosion.x, explosion.y, explosion.radius * t);
-    glow.addColorStop(0, 'rgba(255,176,74,0.5)');
-    glow.addColorStop(1, 'rgba(255,176,74,0)');
+    ctx.globalAlpha = Math.max(0, 1 - t * t);
+    const glowRadius = explosion.radius * (0.4 + t * 0.6);
+    const glow = ctx.createRadialGradient(explosion.x, explosion.y, 0, explosion.x, explosion.y, glowRadius);
+    glow.addColorStop(0, 'rgba(255,205,150,0.55)');
+    glow.addColorStop(1, 'rgba(255,140,60,0)');
     ctx.fillStyle = glow;
-    ctx.beginPath(); ctx.arc(explosion.x, explosion.y, explosion.radius * t, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(explosion.x, explosion.y, glowRadius, 0, Math.PI * 2); ctx.fill();
+    if (spriteReady(sprites.explosion)) {
+      const frameCount = 6;
+      const frame = Math.min(frameCount - 1, Math.floor(t * frameCount));
+      const frameW = sprites.explosion.naturalWidth / frameCount;
+      const frameH = sprites.explosion.naturalHeight;
+      const size = explosion.radius * 1.7;
+      ctx.drawImage(sprites.explosion, frame * frameW, 0, frameW, frameH, explosion.x - size / 2, explosion.y - size / 2, size, size);
+    }
     ctx.restore();
   }
 }
+
+// Corpo caído (com moscas alternando) + mancha de sangue no chão, criados no
+// instante em que uma entidade passa de viva pra morta (ver `interpolate`).
+// Independentes do Map `entities` para continuarem visíveis mesmo depois que
+// o id original é reciclado por um respawn.
+function spawnDeathEffect(entity) {
+  const now = performance.now();
+  corpses.push({ x: entity.x, y: entity.y, angle: entity.angle, until: now + 4200, stain: Math.floor(Math.random() * 5) });
+  bloodBursts.push({ x: entity.x, y: entity.y, life: 0.3, duration: 0.3 });
+}
+
+function drawBloodStains(now) {
+  if (!spriteReady(sprites.bloodStain)) return;
+  const frameW = sprites.bloodStain.naturalWidth / 5;
+  const frameH = sprites.bloodStain.naturalHeight;
+  for (const corpse of corpses) {
+    const age = 1 - Math.max(0, (corpse.until - now) / 4200);
+    const fade = Math.max(0, 1 - Math.max(0, age - 0.7) / 0.3);
+    ctx.save();
+    ctx.globalAlpha = 0.85 * fade;
+    ctx.drawImage(sprites.bloodStain, corpse.stain * frameW, 0, frameW, frameH, corpse.x - 0.55, corpse.y - 0.5, 1.1, frameH / frameW * 1.1);
+    ctx.restore();
+  }
+}
+
+function drawCorpses(now) {
+  if (!spriteReady(sprites.corpse)) return;
+  const frameW = sprites.corpse.naturalWidth / 2;
+  const frameH = sprites.corpse.naturalHeight;
+  for (let i = corpses.length - 1; i >= 0; i -= 1) {
+    const corpse = corpses[i];
+    if (now >= corpse.until) { corpses.splice(i, 1); continue; }
+    const flicker = Math.floor(now / 260) % 2;
+    const fadeOut = Math.max(0, Math.min(1, (corpse.until - now) / 400));
+    ctx.save();
+    ctx.globalAlpha = fadeOut;
+    ctx.translate(corpse.x, corpse.y);
+    if (Math.cos(corpse.angle) < 0) ctx.scale(-1, 1);
+    ctx.drawImage(sprites.corpse, flicker * frameW, 0, frameW, frameH, -0.65, -1.05, 1.3, frameH / frameW * 1.3);
+    ctx.restore();
+  }
+}
+
+function drawBloodBursts(dt) {
+  if (!spriteReady(sprites.bloodBurst)) { bloodBursts.length = 0; return; }
+  const frameCount = 5;
+  const frameW = sprites.bloodBurst.naturalWidth / frameCount;
+  const frameH = sprites.bloodBurst.naturalHeight;
+  for (let i = bloodBursts.length - 1; i >= 0; i -= 1) {
+    const burst = bloodBursts[i];
+    burst.life -= dt;
+    if (burst.life <= 0) { bloodBursts.splice(i, 1); continue; }
+    const t = 1 - Math.max(0, burst.life / burst.duration);
+    const frame = Math.min(frameCount - 1, Math.floor(t * frameCount));
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, 1 - t);
+    const size = 1.3;
+    ctx.drawImage(sprites.bloodBurst, frame * frameW, 0, frameW, frameH, burst.x - size / 2, burst.y - size / 2, size, frameH / frameW * size);
+    ctx.restore();
+  }
+}
+
+// O pacote de sprites só tem 3 zumbis; a variante 4 ("bomba", vinda do servidor)
+// reaproveita o corpo do zumbi grande com um brilho vermelho pulsante por cima.
+const ZOMBIE_SPRITE_INDEX = [0, 1, 2, 2];
 
 function drawZombies(now) {
   for (const [, entity] of entities) {
     if (entity.kind !== 'zombie' || entity.alive === false) continue;
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
     ctx.beginPath(); ctx.ellipse(entity.x, entity.y + 0.1, 0.5, 0.22, 0, 0, Math.PI * 2); ctx.fill();
-    drawCreatureSprite(plainSheet(sprites.zombie[entity.variant || 0]), entity.x, entity.y, entity.angle, 1.15, entity.alive);
+    if (entity.variant === 3) {
+      const armed = entity.fuseAt > 0;
+      const pulse = 0.5 + 0.5 * Math.sin(now / (armed ? 55 : 220));
+      const glowRadius = armed ? 0.95 : 0.75;
+      const glow = ctx.createRadialGradient(entity.x, entity.y, 0, entity.x, entity.y, glowRadius);
+      glow.addColorStop(0, `rgba(255,60,40,${(armed ? 0.75 : 0.45) * pulse})`);
+      glow.addColorStop(1, 'rgba(255,60,40,0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath(); ctx.arc(entity.x, entity.y, glowRadius, 0, Math.PI * 2); ctx.fill();
+    }
+    drawCreatureSprite(plainSheet(sprites.zombie[ZOMBIE_SPRITE_INDEX[entity.variant || 0]]), entity.x, entity.y, entity.angle, 1.15, entity.alive);
     if (typeof entity.hp === 'number' && entity.hp < 65) {
       const barWidth = 0.7;
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
@@ -713,15 +802,23 @@ function drawReticle() {
 // Vinheta de campo de visão limitado (estilo Project Zomboid): desenhada em
 // espaço de tela (a câmera sempre centraliza o jogador local em width/2,
 // height/2), então um gradiente radial centrado no meio da tela já corresponde
-// exatamente à posição do jogador no mundo.
-function drawFogOfWar(radiusWorldUnits) {
-  const r = radiusWorldUnits * SCALE;
+// exatamente à posição do jogador no mundo. A área clara é alongada e deslocada
+// na direção em que o personagem está olhando (ângulo de mira), não um círculo
+// uniforme — por isso se vê bem mais longe pra frente do que pros lados/trás.
+function drawFogOfWar(radiusWorldUnits, angle) {
+  const rx = radiusWorldUnits * SCALE;
+  const ry = rx * 0.58;
+  const forwardShift = rx * 0.32;
   ctx.save();
-  const grad = ctx.createRadialGradient(width / 2, height / 2, r * 0.5, width / 2, height / 2, r);
+  ctx.translate(width / 2, height / 2);
+  ctx.rotate(angle || 0);
+  ctx.translate(forwardShift, 0);
+  ctx.scale(1, ry / rx);
+  const grad = ctx.createRadialGradient(0, 0, rx * 0.32, 0, 0, rx);
   grad.addColorStop(0, 'rgba(2,5,6,0)');
   grad.addColorStop(1, 'rgba(2,5,6,0.97)');
   ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, width, height);
+  ctx.fillRect(-6000, -6000, 12000, 12000);
   ctx.restore();
 }
 
@@ -738,17 +835,20 @@ function render(now, dt) {
   ctx.translate(-camX, -camY);
 
   drawFloor(world.arena);
+  drawBloodStains(now);
   drawWalls();
   drawProps();
   drawPickups(now);
+  drawCorpses(now);
   drawZombies(now);
   drawPlayers(now);
   drawTracers(dt);
+  drawBloodBursts(dt);
   drawExplosions(dt);
   ctx.restore();
 
   if (deployed) {
-    drawFogOfWar(visionRadius);
+    drawFogOfWar(visionRadius, aimAngle());
     drawReticle();
   }
 }
@@ -787,12 +887,14 @@ function interpolate(dt) {
     entity.y += (target.y - entity.y) * factor;
     entity.angle = lerpAngle(entity.angle, target.angle || entity.angle, factor);
     entity.hp = target.hp;
+    if (entity.alive === true && target.alive === false) spawnDeathEffect(entity);
     entity.alive = target.alive;
     entity.name = target.name;
     entity.color = target.color;
     entity.variant = target.variant;
     entity.weapon = target.weapon;
     entity.shield = target.shield;
+    entity.fuseAt = target.fuseAt;
   }
 }
 
@@ -851,7 +953,8 @@ function attemptGrenade() {
   const now = performance.now();
   if (now - lastClientGrenade < 900) return;
   lastClientGrenade = now;
-  socket.emit('throwGrenade', { angle: aimAngle() });
+  const cursorDistance = Math.hypot(mouseX - width / 2, mouseY - height / 2) / SCALE;
+  socket.emit('throwGrenade', { angle: aimAngle(), distance: cursorDistance });
 }
 
 socket.on('connect', () => { ui.connection.textContent = 'LINK ESTÁVEL'; });
@@ -876,6 +979,18 @@ socket.on('announcement', (message) => {
   ui.announcement.querySelector('p').textContent = message.subtitle;
   ui.announcement.classList.add('show');
   setTimeout(() => ui.announcement.classList.remove('show'), message.brief ? 1400 : 3300);
+  if (message.title === 'NOVA RODADA') ui.roundend.style.display = 'none';
+});
+socket.on('roundEnd', (data) => {
+  const sorted = [...(data.scores || [])].sort((a, b) => b.score - a.score);
+  ui.roundendScoreboard.innerHTML = `<div class="score-head"><span>AGENTE</span><span>PTS</span><span>K</span></div>${sorted.map((p) => `<div class="score-row ${p.id === selfId ? 'self' : ''}"><span>${escapeHtml(p.name)}</span><b>${p.score}</b><span>${p.kills}</span></div>`).join('')}`;
+  ui.roundendReady.disabled = false;
+  ui.roundendReady.textContent = 'PRÓXIMA PARTIDA';
+  ui.roundendStatus.textContent = '';
+  ui.roundend.style.display = 'grid';
+});
+socket.on('readyUpdate', ({ ready, total }) => {
+  ui.roundendStatus.textContent = `${ready}/${total} PRONTOS`;
 });
 socket.on('killfeed', (message) => {
   const row = document.createElement('div');
@@ -911,6 +1026,11 @@ ui.deploy.addEventListener('click', () => {
   deployed = true;
   socket.emit('ready', ui.name.value);
   ui.start.style.display = 'none';
+});
+ui.roundendReady.addEventListener('click', () => {
+  socket.emit('readyNext');
+  ui.roundendReady.disabled = true;
+  ui.roundendReady.textContent = 'AGUARDANDO OUTROS AGENTES...';
 });
 addEventListener('mousemove', (event) => { mouseX = event.clientX; mouseY = event.clientY; });
 addEventListener('mousedown', (event) => { if (event.button === 0) { firing = true; attemptShoot(); } });

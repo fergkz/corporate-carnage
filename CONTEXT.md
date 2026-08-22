@@ -344,3 +344,38 @@ Mudanças técnicas em `public/game.js`:
 - Realizar uma partida completa com vários dispositivos pela URL pública.
 - Criar testes automatizados de regras do servidor.
 - Commitar e publicar a branch quando Fernando solicitar.
+
+## Rodada de features via subagentes paralelos
+
+Fernando pediu um lote grande de features de uma vez e para executar em subagentes paralelos por falta de tempo. Foram disparados 3 agentes em worktrees git isolados simultaneamente: (A) sistemas de combate/pickups no `server.js`, (B) tela de fim de partida com placar e confirmação, (C) neblina de visão + animação de arma no `game.js`.
+
+**Armadilha descoberta**: nenhuma alteração desta sessão nunca foi commitada — tudo ficou como mudança *uncommitted* na working tree principal. `git worktree` só clona o histórico *commitado*, então os 3 worktrees nasceram com o `hackathon-game-starter` antigo (boilerplate de ~50 linhas), sem nada do jogo real. O agente B percebeu a discrepância e parou sem escrever nada, pedindo confirmação — certo. Os agentes A e C perceberam sozinhos, copiaram o `server.js`/`game.js` atual do repositório principal para dentro do próprio worktree antes de editar, e entregaram diffs aplicáveis. O trabalho do agente B foi refeito manualmente depois. Lição: se for repetir esse padrão de agentes em worktree neste projeto, commitar antes (ou avisar explicitamente os agentes para copiar o arquivo atual, como A e C fizeram por conta própria).
+
+Features entregues nesta rodada:
+
+- **Spawn aleatório de pickups**: `PICKUP_SPAWN_POOL` (19 coordenadas já validadas contra colisão) substitui as posições fixas; cada pickup sorteia uma posição livre ao nascer e a cada respawn.
+- **Troca de arma só se for melhor**: ranking `pistol(1) < rifle(2) < shotgun(3)`; só troca automaticamente se a nova for mais forte que a equipada (ou se a atual for a faca).
+- **Facada empurra o alvo**: golpe de faca aplica um knockback de 1.1 unidades na direção do golpe, tanto em zumbi quanto em jogador rival.
+- **Três novos especiais**: `vision` (amplia o raio de visão do jogador por 15s — ver campo `visionBoostUntil`), `repel` (zumbis ignoram esse jogador como alvo e são empurrados se ficarem a menos de 3.2 unidades dele, por 12s — campo `repelUntil`), `aggro` (efeito instantâneo: força todos os zumbis a perseguir o rival vivo mais próximo de quem coletou, por 5s).
+- **Campo de visão limitado (estilo Project Zomboid)**: vinheta radial no cliente (`drawFogOfWar`), 8 unidades de raio normalmente, 15 com o especial de visão ativo.
+- **Animação de arma melhorada**: recuo ao disparar, balanço sutil contínuo, golpe de faca varrendo de um lado a outro em vez de estático.
+- **Fim de partida com confirmação**: ao acabar o cronômetro, servidor emite `roundEnd` com o placar final (sem mais reinício automático); cliente mostra overlay com placar + botão "PRÓXIMA PARTIDA"; servidor só chama `resetMatch()` quando todos os jogadores prontos confirmarem (`readyNext`/`readyUpdate`).
+
+## Ajustes finos pós-rodada de subagentes
+
+- **Campo de visão direcional**: `drawFogOfWar` deixou de ser um círculo centrado no jogador e passou a ser uma elipse rotacionada pelo ângulo de mira (`aimAngle()`), deslocada pra frente — vê mais longe na direção que está olhando, como no Project Zomboid, em vez de igual em todas as direções.
+- **Granada cai na mira, não sempre no alcance máximo**: cliente calcula a distância do cursor até o jogador em unidades de mundo e envia em `throwGrenade`; servidor usa essa distância (limitada entre `GRENADE_MIN_RANGE = 1.4` e `GRENADE_RANGE = 7`, e ainda cortada antes se bater numa parede).
+- **+30% de zumbis**: `ZOMBIE_COUNT = 14` (era 11).
+- **Zumbi-bomba (variante 4)**: chance baixa (`BOMB_ZOMBIE_CHANCE = 0.12`) de nascer como esse tipo; ao chegar perto de um jogador, arma um pino de `BOMB_FUSE_MS = 550`ms (visível no cliente como um brilho vermelho que pulsa mais rápido) e explode em área (`BOMB_RADIUS`/`BOMB_DAMAGE`), reaproveitando o efeito visual de explosão da granada. Como o pacote de sprites não tem um zumbi-bomba dedicado, ele reaproveita visualmente o corpo do zumbi grande com o brilho vermelho por cima.
+- **Sem nome padrão**: o campo de codinome na tela inicial não vem mais pré-preenchido com "Fernando" — fica vazio com um placeholder; se enviado vazio, o servidor cai no fallback já existente (`Agente N`).
+
+## Animações de morte e explosão (sprites reais)
+
+Fernando notou que morte de jogador/zumbi não tinha nenhuma animação (a entidade simplesmente desaparecia) e que a explosão de granada/zumbi-bomba era só um gradiente procedural. O zip original do pacote (`~/Downloads/Zombie Apocalypse Tileset.zip`) ainda estava disponível, então foram extraídos mais quadros de lá (mesmo processo de antes: Python/Pillow recortando do pacote) em vez de desenhar do zero:
+
+- `corpse.png`: corpo caído com moscas (2 quadros alternando), usado tanto pra jogador quanto zumbi — o pacote não tinha um cadáver de zumbi dedicado, então reaproveitei o mesmo corpo genérico pros dois casos.
+- `explosion.png`: animação real de explosão de 6 quadros, substituindo o gradiente/anel desenhado por código em `drawExplosions`.
+- `blood_burst.png`: esguicho de sangue animado (5 quadros) tocado uma vez no instante exato da morte.
+- `blood_stain.png`: 5 variações de mancha de sangue estática, uma sorteada por morte, que fica no chão por alguns segundos e desaparece com fade.
+
+Implementação em `public/game.js`: a transição de `alive: true → false` é detectada dentro de `interpolate()` (comparando o estado anterior antes de sobrescrever) e dispara `spawnDeathEffect`, que empilha um corpo (`corpses`, dura ~4.2s) e um esguicho de sangue (`bloodBursts`, ~0.3s) — ambos desacoplados do Map `entities`, então continuam visíveis mesmo depois que o id original é reciclado por um respawn. As pastas "Damaged Player/Zombie Animation Frames" do pacote foram investigadas mas eram um efeito de flash de dano (silhueta preta/rosa alternando), não uma pose de morte — não foram usadas.

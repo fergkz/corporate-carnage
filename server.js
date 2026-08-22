@@ -116,12 +116,18 @@ const GRENADE_MAX = 3;
 const GRENADE_DAMAGE = 70;
 const GRENADE_RADIUS = 2.4;
 const GRENADE_RANGE = 7;
+const GRENADE_MIN_RANGE = 1.4;
 const GRENADE_COOLDOWN = 900;
 const VISION_BOOST_MS = 15000;
 const REPEL_MS = 12000;
 const REPEL_RADIUS = 3.2;
 const AGGRO_MS = 5000;
 const KNIFE_KNOCKBACK = 1.1;
+const ZOMBIE_COUNT = 14; // 11 + 30%
+const BOMB_ZOMBIE_CHANCE = 0.12;
+const BOMB_FUSE_MS = 550;
+const BOMB_DAMAGE = 55;
+const BOMB_RADIUS = 2.6;
 
 const PICKUP_SPAWN_POOL = [
   [-6, -4], [6, 4], [0, -15], [-17, 0], [17, 0], [-13, -15], [13, 15], [7, 15],
@@ -217,11 +223,28 @@ function spawnZombie() {
     [x, y] = edge === 0 ? [-20, value] : edge === 1 ? [20, value] : edge === 2 ? [value, -20] : [value, 20];
   } while (collides(x, y, 0.48));
   const id = `z${++zombieSequence}`;
+  const variant = Math.random() < BOMB_ZOMBIE_CHANCE ? 3 : Math.floor(Math.random() * 3);
   zombies.set(id, {
     id, x, y, angle: 0, hp: 65, speed: 1.45 + Math.random() * 0.55, attackAt: 0,
-    variant: Math.floor(Math.random() * 3), wanderAngle: Math.random() * Math.PI * 2, thinkAt: 0,
-    forcedTargetId: null, forcedUntil: 0,
+    variant, wanderAngle: Math.random() * Math.PI * 2, thinkAt: 0,
+    forcedTargetId: null, forcedUntil: 0, fuseAt: 0,
   });
+}
+
+function explodeBomb(zombie) {
+  io.emit('grenade', { x: zombie.x, y: zombie.y, radius: BOMB_RADIUS });
+  for (const player of players.values()) {
+    if (!player.alive || !player.ready) continue;
+    if (Math.hypot(player.x - zombie.x, player.y - zombie.y) > BOMB_RADIUS) continue;
+    damageHp(player, BOMB_DAMAGE);
+    if (player.hp === 0) {
+      player.alive = false;
+      player.deaths += 1;
+      setTimeout(() => { if (players.has(player.id)) resetPlayer(player, true); }, 2200);
+    }
+  }
+  zombies.delete(zombie.id);
+  setTimeout(spawnZombie, 850);
 }
 
 function resetMatch() {
@@ -231,7 +254,7 @@ function resetMatch() {
     const [x, y] = randomPickupPosition(pickup);
     Object.assign(pickup, { x, y, active: true, respawnAt: 0 });
   }
-  for (let i = 0; i < 11; i += 1) spawnZombie();
+  for (let i = 0; i < ZOMBIE_COUNT; i += 1) spawnZombie();
   for (const player of players.values()) {
     resetPlayer(player, false);
     player.wantsNextRound = false;
@@ -413,7 +436,8 @@ function handleGrenade(player, data) {
   const angle = Number.isFinite(data?.angle) ? data.angle : player.angle;
   const dirX = Math.cos(angle);
   const dirY = Math.sin(angle);
-  let distance = GRENADE_RANGE;
+  const requested = Number.isFinite(data?.distance) ? data.distance : GRENADE_RANGE;
+  let distance = Math.min(GRENADE_RANGE, Math.max(GRENADE_MIN_RANGE, requested));
   for (const wall of walls) {
     const hit = rayBox(player.x, player.y, dirX, dirY, wall);
     if (hit !== null && hit < distance) distance = hit;
@@ -556,6 +580,10 @@ function update() {
       const direction = zombieDirection(zombie, target, now);
       zombie.angle = direction;
       moveWithCollision(zombie, Math.cos(direction) * speed, Math.sin(direction) * speed, 0.48);
+    } else if (zombie.variant === 3) {
+      zombie.angle = Math.atan2(target.y - zombie.y, target.x - zombie.x);
+      if (!zombie.fuseAt) zombie.fuseAt = now + BOMB_FUSE_MS;
+      if (now >= zombie.fuseAt) explodeBomb(zombie);
     } else if (now > zombie.attackAt && now > target.invulnerableUntil) {
       zombie.angle = Math.atan2(target.y - zombie.y, target.x - zombie.x);
       zombie.attackAt = now + 900;

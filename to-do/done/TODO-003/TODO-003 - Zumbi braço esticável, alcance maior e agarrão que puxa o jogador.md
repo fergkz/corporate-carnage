@@ -1,6 +1,6 @@
 # TODO-003 — Zumbi braço esticável: alcance maior e agarrão que puxa o jogador
 
-**Status**: pendente
+**Status**: concluído
 
 **Pedido original**: "O zumbi que estica deve ter um alcance um pouco maior
 e, ao conseguir 'agarrar' o jogador, ele puxa o jogador para próximo de si

@@ -11,7 +11,7 @@ const SHIELD_CAPACITY = 60;
 const BASE_VISION = 8; // unidades de mundo visíveis normalmente (estilo Project Zomboid)
 const BOOSTED_VISION = 15; // unidades de mundo visíveis com o especial de visão ativo
 const EXPLORED_MASK_RES = 3; // px por unidade de mundo na máscara de exploração (baixa resolução, célula ~0.33 unidade)
-const STRETCH_WINDUP_MS = 550; // espelha o windupMs do zumbi "braço esticável" no servidor
+const STRETCH_WINDUP_MS = 650; // espelha o windupMs do zumbi "braço esticável" no servidor
 
 // ---------------------------------------------------------------------------
 // Sprites reais (pixel art), extraídos do pacote "Zombie Apocalypse Tileset"
@@ -797,6 +797,18 @@ function drawBloodBursts(dt) {
 // vermelho/brilhante conforme o golpe se aproxima — dá uma janela real de
 // esquiva antes do impacto, na mesma linguagem visual do glow do zumbi bomba.
 function drawStretchTelegraph(entity) {
+  if (entity.stretchPhase === 'strike' || entity.stretchPhase === 'pull') {
+    // Braço conectado: golpe/puxão em andamento — reforça visualmente o
+    // acerto, já que antes strike/recover não tinham nenhum efeito próprio.
+    ctx.save();
+    ctx.translate(entity.x, entity.y - 0.5);
+    ctx.rotate(entity.angle);
+    ctx.strokeStyle = 'rgba(255,40,30,0.95)';
+    ctx.lineWidth = 0.22;
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(2.0, 0); ctx.stroke();
+    ctx.restore();
+    return;
+  }
   const remaining = (entity.phaseAt || 0) - Date.now();
   if (remaining <= 0 || remaining > STRETCH_WINDUP_MS) return;
   const t = 1 - Math.max(0, Math.min(1, remaining / STRETCH_WINDUP_MS));
@@ -841,7 +853,7 @@ function drawZombies(now) {
       ctx.fillStyle = glow;
       ctx.beginPath(); ctx.arc(entity.x, entity.y, glowRadius, 0, Math.PI * 2); ctx.fill();
     }
-    if (entity.typeId === 'stretcher' && entity.stretchPhase === 'windup') drawStretchTelegraph(entity);
+    if (entity.typeId === 'stretcher' && entity.stretchPhase && entity.stretchPhase !== 'idle' && entity.stretchPhase !== 'recover') drawStretchTelegraph(entity);
     drawCreatureSprite(plainSheet(sprites.zombieByType[entity.typeId]) || plainSheet(sprites.zombieByType.normal0), entity.x, entity.y, entity.angle, displayW, entity.alive);
     if (typeof entity.hp === 'number' && entity.hp < meta.maxHp) {
       const barWidth = 0.7 * shadowScale;

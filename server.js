@@ -140,7 +140,7 @@ const ZOMBIE_TYPES = [
   { id: 'normal2', weight: 27, hp: 65, speed: [1.45, 2.00], radius: 0.48, meleeDamage: 12, meleeRange: 1.15, meleeCooldownMs: 900 },
   { id: 'bomb', weight: 12, hp: 65, speed: [1.45, 2.00], radius: 0.48, special: 'bomb', fuseMs: 550, damage: 55, radiusExplode: 2.6 },
   { id: 'tank', weight: 7, hp: 260, speed: [0.85, 1.05], radius: 0.78, meleeDamage: 26, meleeRange: 1.25, meleeCooldownMs: 1100 },
-  { id: 'stretcher', weight: 6, hp: 70, speed: [1.35, 1.75], radius: 0.48, special: 'stretch', meleeDamage: 16, meleeRange: 2.6, windupMs: 550, strikeMs: 180, recoverMs: 650 },
+  { id: 'stretcher', weight: 6, hp: 70, speed: [1.35, 1.75], radius: 0.48, special: 'stretch', meleeDamage: 16, meleeRange: 3.2, windupMs: 650, strikeMs: 180, recoverMs: 650, pullLandingDistance: 1.0, pullSpeed: 6.5, pullMs: 400 },
   { id: 'acid', weight: 6, hp: 55, speed: [1.2, 1.5], radius: 0.48, special: 'acid', range: 8.5, damage: 14, cooldownMs: 2200, projectileSpeed: 9 },
   { id: 'screamer', weight: 5, hp: 55, speed: [1.3, 1.6], radius: 0.48, special: 'scream', screamRange: 6, screamRadius: 7, screamCooldownMs: 4000, meleeDamage: 8, meleeRange: 1.1, meleeCooldownMs: 900 },
   { id: 'crawler', weight: 6, hp: 30, speed: [2.3, 2.8], radius: 0.4, meleeDamage: 8, meleeRange: 1.05, meleeCooldownMs: 700 },
@@ -861,7 +861,7 @@ function spawnZombie(room) {
     id, x, y, angle: 0, hp: type.hp, speed: minSpeed + Math.random() * (maxSpeed - minSpeed), attackAt: 0,
     typeId: type.id, radius: type.radius, wanderAngle: Math.random() * Math.PI * 2, thinkAt: 0,
     forcedTargetId: null, forcedUntil: 0, fuseAt: 0,
-    stretchPhase: type.special === 'stretch' ? 'idle' : null, phaseAt: 0,
+    stretchPhase: type.special === 'stretch' ? 'idle' : null, phaseAt: 0, grabTargetId: null,
     nextRangedAttackAt: 0,
   });
 }
@@ -905,7 +905,7 @@ function zombieDirection(room, zombie, target, now) {
   return zombie.wanderAngle;
 }
 
-function runStretchLogic(room, zombie, type, target, now) {
+function runStretchLogic(room, zombie, type, target, now, dt) {
   if (!zombie.stretchPhase || zombie.stretchPhase === 'idle') {
     if (now < zombie.attackAt) return;
     zombie.angle = Math.atan2(target.y - zombie.y, target.x - zombie.x);
@@ -918,13 +918,46 @@ function runStretchLogic(room, zombie, type, target, now) {
     zombie.stretchPhase = 'strike';
     zombie.phaseAt = now + type.strikeMs;
     const distance = Math.hypot(target.x - zombie.x, target.y - zombie.y);
-    if (distance <= type.meleeRange) applyDamage(room, target, type.meleeDamage, null, false);
+    if (distance <= type.meleeRange) {
+      applyDamage(room, target, type.meleeDamage, null, false);
+      zombie.grabTargetId = target.id;
+    }
     return;
   }
   if (zombie.stretchPhase === 'strike') {
     if (now < zombie.phaseAt) return;
-    zombie.stretchPhase = 'recover';
-    zombie.phaseAt = now + type.recoverMs;
+    if (zombie.grabTargetId && type.pullLandingDistance > 0) {
+      zombie.stretchPhase = 'pull';
+      zombie.phaseAt = now + (type.pullMs || 400);
+    } else {
+      zombie.stretchPhase = 'recover';
+      zombie.phaseAt = now + type.recoverMs;
+    }
+    return;
+  }
+  if (zombie.stretchPhase === 'pull') {
+    // Puxão sustentado (ao estilo Smoker de L4D): para automaticamente se o
+    // alvo agarrado morrer/desconectar/sair de jogo no meio do caminho — não
+    // é um teleporte instantâneo, então dá margem pra um resgate. O timeout
+    // de pullMs também cobre o caso raro de mais de um stretcher agarrar o
+    // mesmo alvo ao mesmo tempo puxando em direções diferentes.
+    const grabbed = room.players.get(zombie.grabTargetId);
+    if (!grabbed || !grabbed.alive || !grabbed.ready) {
+      zombie.grabTargetId = null;
+      zombie.stretchPhase = 'recover';
+      zombie.phaseAt = now + type.recoverMs;
+      return;
+    }
+    const distance = Math.hypot(grabbed.x - zombie.x, grabbed.y - zombie.y);
+    if (distance <= type.pullLandingDistance || now >= zombie.phaseAt) {
+      zombie.grabTargetId = null;
+      zombie.stretchPhase = 'recover';
+      zombie.phaseAt = now + type.recoverMs;
+      return;
+    }
+    const angle = Math.atan2(zombie.y - grabbed.y, zombie.x - grabbed.x);
+    const step = Math.min(type.pullSpeed * dt, distance - type.pullLandingDistance);
+    moveWithCollision(grabbed, Math.cos(angle) * step, Math.sin(angle) * step, PLAYER_RADIUS);
     return;
   }
   if (zombie.stretchPhase === 'recover') {
@@ -1007,7 +1040,7 @@ function updateZombies(room, now, dt) {
     }
 
     if (type.special === 'stretch' && zombie.stretchPhase && zombie.stretchPhase !== 'idle') {
-      runStretchLogic(room, zombie, type, target, now);
+      runStretchLogic(room, zombie, type, target, now, dt);
       continue;
     }
 
@@ -1061,7 +1094,7 @@ function updateZombies(room, now, dt) {
       if (!zombie.fuseAt) zombie.fuseAt = now + type.fuseMs;
       if (now >= zombie.fuseAt) explodeBomb(room, zombie, type);
     } else if (type.special === 'stretch') {
-      runStretchLogic(room, zombie, type, target, now);
+      runStretchLogic(room, zombie, type, target, now, dt);
     } else if (now > zombie.attackAt && now > target.invulnerableUntil) {
       zombie.angle = Math.atan2(target.y - zombie.y, target.x - zombie.x);
       zombie.attackAt = now + (type.meleeCooldownMs || 900);

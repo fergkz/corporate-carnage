@@ -51,6 +51,13 @@ transparência)
   inteira, resetando só quando `world` é reatribuído (nova sala), como a
   proposta recomendava por padrão.
 
+**Atualização pós-lançamento**: a camada lembrada e a vinheta de fog-of-war
+ficaram clareadas depois do lançamento inicial — `renderRememberedLayer`
+passou de `rgba(0,0,0,0.72)` pra `rgba(0,0,0,0.48)`, e o topo do gradiente
+de `drawFogOfWar` de `rgba(2,5,6,0.85)/rgba(2,5,6,1)` pra
+`rgba(2,5,6,0.5)/rgba(2,5,6,0.62)` — a área nunca visitada continua bem
+escura, mas a área já explorada ficou mais fácil de reconhecer.
+
 ## Evidências de teste
 - `node --check server.js` e `node --input-type=module --check < public/game.js`: OK.
 - `docker compose up -d --build` + `npm run check` dentro do container: OK.

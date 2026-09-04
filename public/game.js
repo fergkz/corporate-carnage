@@ -1079,7 +1079,7 @@ function renderRememberedLayer(camX, camY, arena) {
     drawFloor(arena);
     drawWalls();
     drawProps();
-    ctx.fillStyle = 'rgba(0,0,0,0.72)';
+    ctx.fillStyle = 'rgba(0,0,0,0.48)';
     ctx.fillRect(-arena, -arena, arena * 2, arena * 2);
     ctx.globalCompositeOperation = 'destination-in';
     ctx.drawImage(exploredMask.canvas, -arena, -arena, arena * 2, arena * 2);
@@ -1122,10 +1122,15 @@ function drawFogOfWar(radiusWorldUnits, angle) {
   ctx.rotate(angle || 0);
   ctx.translate(forwardShift, 0);
   ctx.scale(1, ry / rx);
+  // A opacidade fora do raio NÃO vai a 1 (como antes): essa vinheta é
+  // desenhada por cima da camada "lembrada" também, e opacidade total aqui
+  // apagaria de vez a silhueta escurecida da exploração. O teto de 0.62
+  // ainda deixa a área nunca visitada bem escura (quase preta, ver
+  // `renderRememberedLayer`), só sem tampar o que já foi explorado.
   const grad = ctx.createRadialGradient(0, 0, rx * 0.26, 0, 0, rx);
   grad.addColorStop(0, 'rgba(2,5,6,0)');
-  grad.addColorStop(0.75, 'rgba(2,5,6,0.85)');
-  grad.addColorStop(1, 'rgba(2,5,6,1)');
+  grad.addColorStop(0.75, 'rgba(2,5,6,0.5)');
+  grad.addColorStop(1, 'rgba(2,5,6,0.62)');
   ctx.fillStyle = grad;
   ctx.fillRect(-6000, -6000, 12000, 12000);
   ctx.restore();

@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Corporate Carnage — criação de sala (protótipo)</title>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&display=swap');
+      :root { color-scheme:dark; font-family:Inter,system-ui,sans-serif; --amber:#f3a229; --cyan:#54d6d2; }
+      * { box-sizing:border-box; }
+      html,body { width:100%; min-height:100%; margin:0; background:#030608; }
+      body { display:grid; place-items:center; padding:24px 0; background:radial-gradient(circle at 50% 35%,rgba(24,40,43,.72),rgba(2,5,7,.97)); }
+      .start-card { width:min(560px,calc(100vw - 36px)); padding:42px; border:1px solid #344247; background:linear-gradient(145deg,rgba(16,25,29,.96),rgba(5,9,11,.98)); box-shadow:0 30px 90px #000; position:relative; margin:auto; }
+      .start-card::before { content:'PROTÓTIPO · CRIAÇÃO RÁPIDA'; position:absolute; top:-1px; left:40px; padding:5px 10px; background:var(--amber); color:#16110a; font:700 9px Inter; letter-spacing:.18em; }
+      .start-card h1 { margin:10px 0 4px; font:700 clamp(32px,7vw,52px)/.9 'Barlow Condensed'; letter-spacing:.02em; color:#fff; }
+      .start-card h1 span { color:var(--amber); }
+      .start-card>p.lead { color:#95a4a9; line-height:1.6; font-size:13px; margin:16px 0 26px; }
+      button { height:48px; padding:0 20px; border:1px solid var(--amber); font:600 12px Inter; letter-spacing:.08em; background:var(--amber); color:#171008; cursor:pointer; }
+      button.ghost { background:transparent; color:#c7d0d3; border-color:#3a474c; }
+      button:disabled { opacity:.55; cursor:default; }
+      .section-title { color:#8d9a9f; font:600 10px Inter; letter-spacing:.16em; margin:20px 0 8px; }
+      .opt-group { display:flex; gap:6px; flex-wrap:wrap; }
+      .opt { min-width:70px; border:1px solid #3c484c; padding:9px 12px; color:#77858a; font:600 10px Inter; letter-spacing:.06em; background:rgba(5,10,12,.6); cursor:pointer; text-align:center; user-select:none; }
+      .opt.active { color:#fff; border-color:var(--amber); box-shadow:inset 0 -2px var(--amber); }
+      .form-row { margin-bottom:14px; }
+      .form-row label { display:block; color:#8d9a9f; font:600 10px Inter; letter-spacing:.12em; margin-bottom:6px; }
+      .room-list { max-height:260px; overflow-y:auto; margin:10px 0 4px; }
+      .player-row { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:9px 12px; background:linear-gradient(90deg,rgba(7,13,16,.8),rgba(7,13,16,.35)); border-left:2px solid transparent; margin-bottom:6px; font-size:12px; color:#d8e0e3; opacity:0; transform:translateY(4px); transition:opacity .25s,transform .25s; }
+      .player-row.filled { opacity:1; transform:translateY(0); }
+      .player-row.host { border-color:var(--amber); }
+      .player-row .tag { color:var(--amber); font-size:9px; letter-spacing:.1em; margin-left:6px; }
+      .player-row .meta { color:#8d9a9f; font-size:10px; letter-spacing:.06em; }
+      .player-row.open { cursor:pointer; justify-content:center; }
+      .player-row.open:hover { border-color:#5a6a70; }
+      .player-row.open .meta { font-size:11px; }
+      .hint { color:#77858a; font-size:11px; line-height:1.5; margin:-2px 0 12px; }
+      .empty-hint { color:#5f6d72; font-size:11px; padding:10px 0; text-align:center; }
+      .room-code-display { font:700 22px 'Barlow Condensed'; letter-spacing:.2em; color:var(--amber); }
+      .link-row { display:flex; align-items:center; gap:8px; }
+      .link-text { flex:1; min-width:0; height:36px; display:flex; align-items:center; padding:0 12px; background:#080d0f; border:1px solid #3a474c; color:#c7d0d3; font:500 12px Inter; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .link-copy { height:36px; padding:0 14px; font-size:10px; white-space:nowrap; }
+      #duration-row { display:block; }
+      #lobby { display:none; }
+    </style>
+  </head>
+  <body>
+    <div id="createRoom">
+      <div class="start-card">
+        <h1>CRIAR<br><span>SALA</span></h1>
+        <p class="lead">Escolha as opções e entre — sem nome de sala. Vagas vazias são preenchidas por bots no nível de dificuldade escolhido.</p>
+
+        <div class="form-row"><label>VISIBILIDADE</label>
+          <div class="opt-group" data-axis="visibility">
+            <div class="opt active" data-value="public">PÚBLICA</div>
+            <div class="opt" data-value="private">SÓ POR LINK</div>
+          </div>
+        </div>
+
+        <div class="form-row"><label>MODO</label>
+          <div class="opt-group" data-axis="mode">
+            <div class="opt active" data-value="coop">COOP (vs zumbis)</div>
+            <div class="opt" data-value="versus">VERSUS (PvP)</div>
+          </div>
+        </div>
+
+        <div class="form-row"><label>JOGADORES</label>
+          <div class="opt-group" data-axis="players">
+            <div class="opt" data-value="2">2</div>
+            <div class="opt active" data-value="4">4</div>
+            <div class="opt" data-value="6">6</div>
+            <div class="opt" data-value="8">8</div>
+          </div>
+        </div>
+
+        <div class="form-row"><label>CONDIÇÃO DE FIM</label>
+          <div class="opt-group" data-axis="end">
+            <div class="opt active" data-value="time">POR TEMPO</div>
+            <div class="opt" data-value="battleRoyale">BATTLE ROYALE</div>
+          </div>
+        </div>
+
+        <div class="form-row" id="duration-row"><label>DURAÇÃO</label>
+          <div class="opt-group" data-axis="duration">
+            <div class="opt" data-value="5">5 MIN</div>
+            <div class="opt active" data-value="10">10 MIN</div>
+            <div class="opt" data-value="15">15 MIN</div>
+          </div>
+        </div>
+
+        <div class="form-row"><label>DIFICULDADE</label>
+          <div class="opt-group" data-axis="difficulty">
+            <div class="opt" data-value="easy">FÁCIL</div>
+            <div class="opt active" data-value="normal">NORMAL</div>
+            <div class="opt" data-value="hard">DIFÍCIL</div>
+            <div class="opt" data-value="insane">INSANO</div>
+          </div>
+        </div>
+
+        <button id="create-submit" style="width:100%;margin-top:10px">CRIAR SALA</button>
+      </div>
+    </div>
+
+    <div id="lobby">
+      <div class="start-card">
+        <h1 id="lobby-title">SALA</h1>
+        <p class="lead" id="lobby-summary" style="margin-bottom:14px"></p>
+        <div id="lobby-code-row" style="margin-bottom:14px"></div>
+        <div class="section-title">AGENTES NA SALA</div>
+        <p class="hint">Vagas mostradas como "aguardando jogador" já podem ter sido preenchidas por bots nos bastidores — clique numa vaga pra simular a entrada de um jogador real.</p>
+        <div id="lobby-players" class="room-list"></div>
+        <div class="empty-hint" id="lobby-status" style="color:#c7d0d3;font-size:13px;letter-spacing:.06em"></div>
+        <button id="lobby-start" style="width:100%;margin-top:14px">INICIAR PARTIDA</button>
+        <button id="lobby-leave" class="ghost" style="width:100%;margin-top:8px">SAIR DA SALA</button>
+      </div>
+    </div>
+
+    <script>
+      var state = { visibility:'public', mode:'coop', players:'4', end:'time', duration:'10', difficulty:'normal' };
+      var joinCounter = 1;
+      var diffLabels = { easy:'FÁCIL', normal:'NORMAL', hard:'DIFÍCIL', insane:'INSANO' };
+
+      document.querySelectorAll('.opt-group').forEach(function (group) {
+        group.addEventListener('click', function (e) {
+          var opt = e.target.closest('.opt');
+          if (!opt) return;
+          var axis = group.getAttribute('data-axis');
+          group.querySelectorAll('.opt').forEach(function (o) { o.classList.remove('active'); });
+          opt.classList.add('active');
+          state[axis] = opt.getAttribute('data-value');
+          if (axis === 'end') {
+            document.getElementById('duration-row').style.display = state.end === 'time' ? 'block' : 'none';
+          }
+        });
+      });
+
+      function roomCode() {
+        var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789', s = '';
+        for (var i = 0; i < 5; i++) s += chars[Math.floor(Math.random() * chars.length)];
+        return s;
+      }
+
+      function playerRow(html, host) {
+        var row = document.createElement('div');
+        row.className = 'player-row' + (host ? ' host' : '');
+        row.innerHTML = html;
+        return row;
+      }
+
+      document.getElementById('create-submit').addEventListener('click', function () {
+        document.getElementById('createRoom').style.display = 'none';
+        document.getElementById('lobby').style.display = 'grid';
+        document.getElementById('lobby').style.display = 'block';
+
+        var modeLabel = state.mode === 'coop' ? 'Coop vs zumbis' : 'Versus PvP';
+        var endLabel = state.end === 'time' ? (state.duration + ' min') : 'Battle royale';
+        document.getElementById('lobby-title').innerHTML = modeLabel.toUpperCase();
+        document.getElementById('lobby-summary').textContent = endLabel + ' · Dificuldade ' + diffLabels[state.difficulty].toLowerCase();
+
+        var link = location.origin + location.pathname + '?room=' + roomCode();
+        var visLabel = state.visibility === 'private' ? 'SÓ POR LINK' : 'SALA PÚBLICA · visível na lista';
+        var codeRow = document.getElementById('lobby-code-row');
+        codeRow.innerHTML =
+          '<div style="color:#8d9a9f;font-size:11px;letter-spacing:.1em;margin-bottom:8px">' + visLabel + '</div>' +
+          '<div class="link-row">' +
+            '<span class="link-text">' + link + '</span>' +
+            '<button id="lobby-copy-link" class="ghost link-copy">COPIAR LINK</button>' +
+          '</div>';
+
+        document.getElementById('lobby-copy-link').addEventListener('click', function () {
+          var btn = this;
+          var done = function () {
+            btn.textContent = 'LINK COPIADO';
+            setTimeout(function () { btn.textContent = 'COPIAR LINK'; }, 2000);
+          };
+          if (navigator.clipboard) {
+            navigator.clipboard.writeText(link).then(done).catch(done);
+          } else {
+            done();
+          }
+        });
+
+        var list = document.getElementById('lobby-players');
+        list.innerHTML = '';
+        var max = parseInt(state.players, 10);
+        var rows = [];
+        for (var i = 0; i < max; i++) {
+          var row = playerRow('<span class="meta">aguardando jogador</span>', false);
+          row.classList.add('filled');
+          list.appendChild(row);
+          rows.push(row);
+        }
+
+        rows[0].classList.add('host');
+        rows[0].innerHTML = '<span>Você<span class="tag">HOST</span></span><span class="meta">pronto</span>';
+
+        for (var j = 1; j < max; j++) {
+          rows[j].classList.add('open');
+          rows[j].dataset.open = '1';
+        }
+
+        var status = document.getElementById('lobby-status');
+
+        rows.forEach(function (row) {
+          row.addEventListener('click', function () {
+            if (row.dataset.open !== '1') return;
+            joinCounter++;
+            row.dataset.open = '0';
+            row.classList.remove('open');
+            row.innerHTML = '<span>Jogador' + joinCounter + '</span><span class="meta">pronto</span>';
+            status.textContent = 'Jogador' + joinCounter + ' entrou na sala.';
+          });
+        });
+
+        status.textContent = 'Aguardando o host iniciar a partida.';
+      });
+
+      document.getElementById('lobby-start').addEventListener('click', function () {
+        document.getElementById('lobby-status').textContent = 'Partida iniciada';
+        this.disabled = true;
+      });
+
+      document.getElementById('lobby-leave').addEventListener('click', function () {
+        document.getElementById('lobby').style.display = 'none';
+        document.getElementById('createRoom').style.display = 'grid';
+        document.getElementById('createRoom').style.display = 'block';
+        document.getElementById('lobby-start').disabled = false;
+      });
+    </script>
+  </body>
+</html>

@@ -10,6 +10,7 @@ const ARENA_BORDER = '#7a4a22';
 const SHIELD_CAPACITY = 60;
 const BASE_VISION = 8; // unidades de mundo visíveis normalmente (estilo Project Zomboid)
 const BOOSTED_VISION = 15; // unidades de mundo visíveis com o especial de visão ativo
+const EXPLORED_MASK_RES = 3; // px por unidade de mundo na máscara de exploração (baixa resolução, célula ~0.33 unidade)
 const STRETCH_WINDUP_MS = 550; // espelha o windupMs do zumbi "braço esticável" no servidor
 
 // ---------------------------------------------------------------------------
@@ -127,9 +128,18 @@ const ZONES = [
 ];
 
 const canvas = document.querySelector('#scene');
-const ctx = canvas.getContext('2d');
+// `ctx` é `let`, não `const`, porque `renderRememberedLayer` a redireciona
+// temporariamente para `rememberedCtx` (ver `withCanvasContext`) pra reusar
+// drawFloor/drawWalls/drawProps sem duplicá-los.
+let ctx = canvas.getContext('2d');
 let width = innerWidth;
 let height = innerHeight;
+
+// Canvas offscreen onde a camada "lembrada" (chão/paredes/props escurecidos,
+// recortados pela máscara de exploração) é composta antes de ser colada na
+// tela — ver `renderRememberedLayer`.
+const rememberedCanvas = document.createElement('canvas');
+const rememberedCtx = rememberedCanvas.getContext('2d');
 
 function resize() {
   width = innerWidth;
@@ -141,6 +151,10 @@ function resize() {
   canvas.style.height = `${height}px`;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.imageSmoothingEnabled = false;
+  rememberedCanvas.width = canvas.width;
+  rememberedCanvas.height = canvas.height;
+  rememberedCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  rememberedCtx.imageSmoothingEnabled = false;
 }
 resize();
 addEventListener('resize', resize);
@@ -170,6 +184,12 @@ const ui = {
 };
 
 let world = { walls: [], props: [], arena: 22 };
+// Máscara de exploração: memória local de "por onde o jogador já passou"
+// nesta partida. Começa totalmente transparente (nada explorado) e cada
+// célula fica opaca pra sempre assim que o jogador visita — nunca volta a
+// escurecer. Resetada só quando `world` é reatribuído (nova sala/partida),
+// não a cada respawn.
+let exploredMask = null; // { canvas, ctx, arena }
 let selfId = null;
 let deployed = false;
 let currentWeapon = 'knife';
@@ -991,6 +1011,90 @@ function drawReticle() {
   ctx.restore();
 }
 
+// Proporções da elipse de visão (alongada e deslocada na direção da mira),
+// compartilhadas entre `drawFogOfWar` (vinheta em espaço de tela) e
+// `clipToVisionCone` (recorte em espaço de mundo) pra ambas desenharem
+// exatamente a mesma forma.
+const VISION_RY_RATIO = 0.58;
+const VISION_FORWARD_SHIFT_RATIO = 0.32;
+
+function resetExploredMask(arena) {
+  const size = Math.max(1, Math.ceil(arena * 2 * EXPLORED_MASK_RES));
+  const maskCanvas = document.createElement('canvas');
+  maskCanvas.width = size;
+  maskCanvas.height = size;
+  exploredMask = { canvas: maskCanvas, ctx: maskCanvas.getContext('2d'), arena };
+}
+
+// "Queima" permanentemente um círculo revelado na máscara de exploração na
+// posição atual do jogador — pintura normal (source-over) que só soma
+// opacidade, nunca escurece de volta uma área já revelada.
+function burnExploredMask(x, y, radiusWorldUnits) {
+  if (!exploredMask) return;
+  const mctx = exploredMask.ctx;
+  const mx = (x + exploredMask.arena) * EXPLORED_MASK_RES;
+  const my = (y + exploredMask.arena) * EXPLORED_MASK_RES;
+  const r = radiusWorldUnits * EXPLORED_MASK_RES;
+  const grad = mctx.createRadialGradient(mx, my, r * 0.35, mx, my, r);
+  grad.addColorStop(0, 'rgba(0,0,0,1)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  mctx.fillStyle = grad;
+  mctx.beginPath();
+  mctx.arc(mx, my, r, 0, Math.PI * 2);
+  mctx.fill();
+}
+
+// Redireciona temporariamente o `ctx` global pra `targetCtx` — permite reusar
+// drawFloor/drawWalls/drawProps (que sempre desenham no `ctx` do módulo) pra
+// compor a camada "lembrada" num canvas offscreen, sem duplicar essas funções.
+function withCanvasContext(targetCtx, fn) {
+  const prev = ctx;
+  ctx = targetCtx;
+  fn();
+  ctx = prev;
+}
+
+// Camada "lembrada": chão + paredes + props (sem entidades, pickups ou
+// efeitos) desenhados escurecidos e recortados pela `exploredMask` — a
+// silhueta estática do que o jogador já visitou, mas não está vendo agora.
+function renderRememberedLayer(camX, camY, arena) {
+  rememberedCtx.clearRect(0, 0, rememberedCanvas.width, rememberedCanvas.height);
+  withCanvasContext(rememberedCtx, () => {
+    ctx.save();
+    ctx.translate(width / 2, height / 2);
+    ctx.scale(SCALE, SCALE);
+    ctx.translate(-camX, -camY);
+    drawFloor(arena);
+    drawWalls();
+    drawProps();
+    ctx.fillStyle = 'rgba(0,0,0,0.72)';
+    ctx.fillRect(-arena, -arena, arena * 2, arena * 2);
+    ctx.globalCompositeOperation = 'destination-in';
+    ctx.drawImage(exploredMask.canvas, -arena, -arena, arena * 2, arena * 2);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.restore();
+  });
+}
+
+// Recorta os desenhos seguintes (dentro do `ctx.save()` de `render`) à mesma
+// elipse de visão de `drawFogOfWar`, mas em espaço de mundo — garante que
+// zumbis/jogadores/pickups/efeitos nunca apareçam fora do raio de visão
+// atual, mesmo na franja onde o gradiente da vinheta ainda não está 100% opaco.
+function clipToVisionCone(camX, camY, angle, radiusWorldUnits) {
+  const rx = radiusWorldUnits;
+  const ry = rx * VISION_RY_RATIO;
+  const forwardShift = rx * VISION_FORWARD_SHIFT_RATIO;
+  ctx.save();
+  ctx.translate(camX, camY);
+  ctx.rotate(angle || 0);
+  ctx.translate(forwardShift, 0);
+  ctx.scale(1, ry / rx);
+  ctx.beginPath();
+  ctx.arc(0, 0, rx, 0, Math.PI * 2);
+  ctx.restore();
+  ctx.clip();
+}
+
 // Vinheta de campo de visão limitado (estilo Project Zomboid): desenhada em
 // espaço de tela (a câmera sempre centraliza o jogador local em width/2,
 // height/2), então um gradiente radial centrado no meio da tela já corresponde
@@ -999,8 +1103,8 @@ function drawReticle() {
 // uniforme — por isso se vê bem mais longe pra frente do que pros lados/trás.
 function drawFogOfWar(radiusWorldUnits, angle) {
   const rx = radiusWorldUnits * SCALE;
-  const ry = rx * 0.58;
-  const forwardShift = rx * 0.32;
+  const ry = rx * VISION_RY_RATIO;
+  const forwardShift = rx * VISION_FORWARD_SHIFT_RATIO;
   ctx.save();
   ctx.translate(width / 2, height / 2);
   ctx.rotate(angle || 0);
@@ -1019,13 +1123,22 @@ function render(now, dt) {
   const self = entities.get(selfId);
   const camX = self ? self.x : 0;
   const camY = self ? self.y : 0;
+  const angle = aimAngle();
 
   ctx.save();
   ctx.fillStyle = '#05090c';
   ctx.fillRect(0, 0, width, height);
+
+  if (deployed && exploredMask) {
+    burnExploredMask(camX, camY, visionRadius);
+    renderRememberedLayer(camX, camY, world.arena);
+    ctx.drawImage(rememberedCanvas, 0, 0, width, height);
+  }
+
   ctx.translate(width / 2, height / 2);
   ctx.scale(SCALE, SCALE);
   ctx.translate(-camX, -camY);
+  if (deployed) clipToVisionCone(camX, camY, angle, visionRadius);
 
   drawFloor(world.arena);
   drawBloodStains(now);
@@ -1044,7 +1157,7 @@ function render(now, dt) {
   ctx.restore();
 
   if (deployed) {
-    drawFogOfWar(visionRadius, aimAngle());
+    drawFogOfWar(visionRadius, angle);
     drawReticle();
   }
 }
@@ -1150,6 +1263,7 @@ function cycleWeapon(direction) {
 }
 
 const cooldowns = { knife: 480, pistol: 330, rifle: 110, shotgun: 720, rocket: 1600 };
+const AMMO_COST = { pistol: 1, rifle: 1, shotgun: 3, rocket: 10 };
 function attemptShoot() {
   if (!deployed || currentWeapon === 'grenade') return;
   const now = performance.now();
@@ -1187,7 +1301,7 @@ function updateHud(players) {
     lastHp = self.hp;
     ui.health.textContent = self.hp;
     ui.healthFill.style.width = `${self.hp}%`;
-    ui.ammo.textContent = currentWeapon === 'knife' ? '∞' : currentWeapon === 'grenade' ? String(self.grenades || 0) : String(self.ammo ?? 0);
+    ui.ammo.textContent = currentWeapon === 'knife' ? '∞' : currentWeapon === 'grenade' ? String(self.grenades || 0) : String(Math.floor((self.ammo ?? 0) / (AMMO_COST[currentWeapon] || 1)));
     ui.slots.forEach((slot, index) => {
       const name = SLOT_ORDER[index];
       const locked = name === 'knife' ? false : name === 'grenade' ? !((self.grenades || 0) > 0) : !self.inventory.includes(name);
@@ -1402,6 +1516,7 @@ socket.on('disconnect', () => {
 socket.on('welcome', (data) => {
   selfId = data.id;
   world = { walls: data.walls, props: data.props, arena: data.arena };
+  resetExploredMask(data.arena);
   roomId = data.roomId;
   roomCode = data.code;
   isHost = !!data.isHost;

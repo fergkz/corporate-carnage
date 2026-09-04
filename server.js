@@ -101,10 +101,10 @@ const weapons = {
   knife: { damage: 42, cooldown: 480, pellets: 1, spread: 0.04, range: 1.85, melee: true },
   pistol: { damage: 28, cooldown: 330, pellets: 1, spread: 0.012, range: 32, ammoCost: 1 },
   rifle: { damage: 18, cooldown: 110, pellets: 1, spread: 0.02, range: 38, ammoCost: 1 },
-  shotgun: { damage: 13, cooldown: 720, pellets: 7, spread: 0.12, range: 20, ammoCost: 2 },
+  shotgun: { damage: 13, cooldown: 720, pellets: 7, spread: 0.12, range: 20, ammoCost: 3 },
   // Arma rara: dispara um míssil que persegue o inimigo vivo mais próximo e
   // explode em área — não é hitscan, é resolvido como projétil em updateRocket().
-  rocket: { damage: 95, cooldown: 1600, pellets: 1, spread: 0, range: 24, ammoCost: 4, projectile: true, speed: 7.5, blastRadius: 2.3 },
+  rocket: { damage: 95, cooldown: 1600, pellets: 1, spread: 0, range: 24, ammoCost: 10, projectile: true, speed: 7.5, blastRadius: 2.3 },
 };
 
 const WEAPON_RANK = { pistol: 1, rifle: 2, shotgun: 3, rocket: 4 };

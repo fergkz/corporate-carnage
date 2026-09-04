@@ -1,0 +1,5 @@
+node_modules/
+
+# Config local do Obsidian, se alguém abrir to-do/ como vault — não é
+# conteúdo do projeto.
+to-do/.obsidian/

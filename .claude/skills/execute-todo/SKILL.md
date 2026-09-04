@@ -1,6 +1,6 @@
 ---
 name: execute-todo
-description: Implementa um item do backlog (to-do/TODO-NNN) — pergunta o necessário, cria uma branch, desenvolve, testa como jogador via Docker/navegador, comita, faz merge com main e envia ao GitHub, e arquiva o item em to-do/done/ com release notes.
+description: Implementa um item do backlog (to-do/TODO-NNN) — pergunta o necessário, cria uma git worktree isolada (nunca o checkout compartilhado, pra rodar em paralelo com outras sessões sem interferência), desenvolve, testa como jogador via Docker/navegador, comita, faz merge com main e envia ao GitHub, e arquiva o item em to-do/done/ com release notes.
 ---
 
 Você vai implementar de ponta a ponta um item específico do backlog em
@@ -10,28 +10,61 @@ ou ajustando o que fazer.
 
 Esta skill **só executa um item por vez**. Se o Fernando pedir mais de um
 ID na mesma mensagem, confirme se é pra rodar em sequência (uma
-branch/commit/merge por item, nessa ordem) antes de começar.
+worktree/branch/commit/merge por item, nessa ordem) antes de começar.
+
+## Regra de isolamento: sempre em worktree própria, nunca no checkout compartilhado
+
+**Todo o trabalho de implementação (passos 3 em diante) roda numa `git
+worktree` isolada, nunca no diretório principal do repo.** O diretório
+principal é compartilhado — pode ter outra sessão do Claude Code (ou uma
+segunda conversa do Fernando) trabalhando em outro TODO ao mesmo tempo, ou
+a skill `create-update-todo` mexendo no backlog. Fazer `git checkout -b`
+ali faz uma tarefa pisar no branch/arquivos da outra assim que rodam em
+paralelo — já aconteceu nesse projeto (TODO-002 e TODO-003 ficaram
+misturados, não commitados, no mesmo checkout, numa execução anterior).
+
+Isso significa:
+- **Nunca** rode `git checkout`/`git switch` no diretório principal do
+  repo como parte desta skill.
+- Cada execução ganha seu próprio diretório de trabalho, criado com
+  `create-worktree.sh` (abaixo), dentro do **diretório de scratchpad desta
+  sessão** (o caminho que aparece no seu próprio system prompt como
+  "Scratchpad Directory" — cada sessão tem o seu, então worktrees de
+  sessões diferentes nunca colidem de caminho).
+- Docker também roda isolado por worktree (nome de projeto + porta
+  próprios), pra duas sessões testando em paralelo não competirem pela
+  mesma porta nem acabarem testando o código uma da outra.
+- Se ao investigar o repo (passo 3) você notar mudanças não commitadas
+  **no diretório principal** que não são desta execução, é sinal de uma
+  sessão concorrente ou de sobra de uma execução antiga que não seguia
+  essa regra — não mexa nelas, apenas avise o Fernando.
 
 ## Scripts (use-os em vez de fazer a parte mecânica na mão)
 
 Ficam em `.claude/skills/lib/`, compartilhados com a skill `create-update-todo` —
 chame com `bash .claude/skills/lib/<script>.sh ...`:
 
-- `find-item.sh TODO-NNN` — acha o item (ativo ou já arquivado).
-- `slugify.sh "Título"` — vira slug kebab-case curto pra nome de branch.
-- `git-precheck.sh` — só relata: status do working tree, branch atual, e
-  se `main` local está atrás/à frente de `origin/main`. Não decide nada
-  por você.
-- `create-branch.sh TODO-NNN slug` — sincroniza `main` com `origin/main` e
-  cria `todo/todo-nnn-slug` a partir dele. Só rode depois de já ter
-  avaliado o `git-precheck.sh`.
+- `find-item.sh TODO-NNN` — acha o item (ativo ou já arquivado). Rode a
+  partir do diretório principal do repo (só leitura, não precisa de
+  worktree pra isso).
+- `slugify.sh "Título"` — vira slug kebab-case curto pra nome de
+  branch/diretório.
+- `create-worktree.sh nome-da-branch caminho` — cria uma worktree a partir
+  de `origin/main` atualizado, sem tocar no checkout de nenhuma outra
+  worktree/sessão. `caminho` deve ficar dentro do scratchpad desta sessão
+  (ver regra acima).
 - `archive-item.sh TODO-NNN` — move o item e seus anexos (com `git mv`,
   preservando histórico) pra `to-do/done/TODO-NNN/` e cria o esqueleto de
-  `RELEASE_NOTES.md`. Rode só depois de já ter editado o `**Status**` do
-  item pra `concluído`.
-- `finish-merge.sh nome-da-branch` — checkout `main`, `merge --no-ff`,
-  `push origin main`, apaga a branch local. Para com a merge em aberto se
-  der conflito (não resolve sozinho).
+  `RELEASE_NOTES.md`. Rode **de dentro da worktree do TODO**, só depois de
+  já ter editado o `**Status**` do item pra `concluído`.
+- `docker-up.sh slug` / `docker-down.sh slug` — sobem/derrubam uma stack
+  Docker isolada (nome de projeto + porta efêmera, só o serviço `game`)
+  pra essa worktree. Rode de dentro da worktree do TODO.
+- `finish-worktree.sh nome-da-branch caminho-da-worktree` — mescla a
+  branch (já commitada) em `origin/main` via uma worktree temporária
+  destacada, dá push, e remove a worktree do TODO e a branch local. Não
+  depende de `main` estar livre em checkout nenhum. Para com a worktree de
+  merge aberta se der conflito (não resolve sozinho).
 
 ## 0. Localizar o item
 
@@ -66,21 +99,18 @@ chame com `bash .claude/skills/lib/<script>.sh ...`:
   acionável (sem riscos em aberto relevantes, proposta clara), não invente
   pergunta só pra ter uma — vá direto pra implementação.
 
-## 3. Preparar a branch
+## 3. Preparar a worktree
 
-- Rode `git-precheck.sh` e avalie a saída:
-  - Se houver mudanças não commitadas que **não** têm a ver com este TODO
-    (sobra de trabalho anterior), **pare e pergunte** ao Fernando o que
-    fazer com elas (commitar à parte, incluir neste TODO, ou deixar como
-    está) antes de continuar — nunca misture trabalho não relacionado no
-    commit deste item, e nunca descarte nada sem confirmar.
-  - Se `main` local estiver atrás de `origin/main`, ou à frente (commits
-    locais não enviados que não são deste TODO), avise o Fernando antes de
-    seguir — `create-branch.sh` só faz fast-forward simples e falha se
-    houver divergência real.
-- Rode `create-branch.sh TODO-NNN slug` (gere o slug com `slugify.sh` a
-  partir do título do item) — cria `todo/todo-nnn-slug` a partir do `main`
-  já sincronizado.
+- Gere o slug com `slugify.sh` a partir do título do item.
+- Rode `create-worktree.sh todo/todo-nnn-slug <scratchpad-desta-sessão>/todo-nnn-slug`
+  — cria a worktree a partir de `origin/main` atualizado. Isso não toca no
+  diretório principal do repo nem no checkout de nenhuma outra
+  worktree/sessão, então não precisa checar se o checkout compartilhado
+  está limpo antes de rodar isto.
+- **A partir daqui, todo comando (Read/Edit/Bash/docker/git) roda dentro
+  do caminho da worktree impresso pelo script**, não no diretório
+  principal do repo. Use esse caminho absoluto em todas as ferramentas
+  pelo resto da execução.
 
 ## 4. Implementar
 
@@ -97,42 +127,65 @@ chame com `bash .claude/skills/lib/<script>.sh ...`:
 ## 5. Testar como se fosse um jogador
 
 Regra do projeto (já documentada em `CONTEXT.md`): **validar sempre via
-Docker**, nunca rodando `node server.js` direto no host.
+Docker**, nunca rodando `node server.js` direto no host. Tudo isto roda de
+dentro da worktree do passo 3.
 
-1. `docker compose up -d --build`, confirme o container `game` saudável.
-2. Rode `npm run check` dentro do container.
-3. **Jogue de verdade** pela ferramenta de navegador — abra a sala, entre
-   numa partida configurada especificamente pra exercitar a funcionalidade
-   do TODO (reproduza o cenário do "Pedido original", não só "abriu e
-   carregou"). Ex.: se o item é sobre munição por arma, pegue munição e
-   confira o número em cada arma; se é sobre o míssil, dispare em
-   situações diferentes e observe o comportamento descrito no pedido.
+1. `docker-up.sh slug` — sobe uma stack isolada (nome de projeto + porta
+   própria) só com o serviço `game`, construído a partir do código desta
+   worktree. Confirme o container saudável e anote a `URL=` impressa.
+2. Rode `npm run check` dentro do container (`docker compose -p <project>
+   exec game npm run check`, usando o `PROJECT=` impresso pelo
+   `docker-up.sh`).
+3. **Jogue de verdade** pela ferramenta de navegador, apontando pra `URL=`
+   impressa (não pro túnel Cloudflare — é mais lento e mais instável pra
+   teste automatizado) — abra a sala, entre numa partida configurada
+   especificamente pra exercitar a funcionalidade do TODO (reproduza o
+   cenário do "Pedido original", não só "abriu e carregou"). Ex.: se o
+   item é sobre munição por arma, pegue munição e confira o número em cada
+   arma; se é sobre o míssil, dispare em situações diferentes e observe o
+   comportamento descrito no pedido.
+   - **Se a aba do navegador automatizado não estiver realmente sendo
+     exibida/composta** (ex.: screenshot falha com "Browser pane não está
+     sendo exibido", `document.hidden === true`), o loop de
+     `requestAnimationFrame` do próprio jogo trava e WASD/mouse não geram
+     efeito nenhum, mesmo que os eventos de teclado sejam disparados. Isso
+     é uma limitação do ambiente de automação, não um bug do jogo. Nesse
+     caso, contorne testando via um cliente `socket.io-client` real (Node,
+     dentro do container — `npm install socket.io-client --no-save` se
+     preciso) que emite os eventos reais do protocolo (`createRoom`,
+     `startMatch`, `input`, `fire`) direto contra o servidor rodando,
+     como um jogador de verdade faria, só sem depender do render do
+     navegador. Isso ainda é teste de ponta a ponta contra o servidor
+     real — não é mock.
 4. Confira o console do navegador (sem erros) e os logs do servidor
-   (`docker compose logs game`) durante o teste, procurando stack trace.
+   (`docker compose -p <project> logs game`) durante o teste, procurando
+   stack trace.
 5. Capture evidência visual quando a ferramenta de navegador permitir
    (screenshot). **Seja honesto sobre limitações**: se não for possível
-   persistir a imagem como arquivo (ex.: pane não exibido/comprimindo o
-   frame), não invente print — descreva por escrito, com precisão, o que
-   foi observado (valores exatos no HUD, mensagens de log, sequência de
-   ações testada). As release notes do passo 7 devem refletir só evidência
-   real.
+   persistir a imagem como arquivo, não invente print — descreva por
+   escrito, com precisão, o que foi observado (valores exatos no HUD,
+   mensagens de log/snapshot do servidor, sequência de ações testada). As
+   release notes do passo 7 devem refletir só evidência real.
 6. **Se o teste revelar um problema**: corrija e teste de novo. Se travar
    de verdade, pare, explique o problema ao Fernando e não prossiga para
-   commit/merge/push — a branch e o trabalho ficam como estão até ele
+   commit/merge/push — a worktree e o trabalho ficam como estão até ele
    decidir o próximo passo.
+7. Depois de terminar os testes (com sucesso ou não), rode `docker-down.sh
+   slug` pra não deixar a stack isolada rodando à toa.
 
 ## 6. Commit
 
-- `git add` só os arquivos relevantes a este TODO (nunca `git add -A`
-  cego) — revise `git status` depois de dar stage.
+- Ainda dentro da worktree: `git add` só os arquivos relevantes a este
+  TODO (nunca `git add -A` cego) — revise `git status` depois de dar
+  stage.
 - Commit seguindo as convenções de commit já ativas no projeto.
 
-## 7. Arquivar o item (ainda na branch do TODO)
+## 7. Arquivar o item (ainda dentro da worktree do TODO)
 
 1. Edite o arquivo do item: campo `**Status**` para `concluído`.
-2. Rode `archive-item.sh TODO-NNN` — move o item e os anexos com prefixo
-   `TODO-NNN-` pra `to-do/done/TODO-NNN/` (via `git mv`) e cria o esqueleto
-   de `to-do/done/TODO-NNN/RELEASE_NOTES.md`.
+2. Rode `archive-item.sh TODO-NNN` (de dentro da worktree) — move o item e
+   os anexos com prefixo `TODO-NNN-` pra `to-do/done/TODO-NNN/` (via `git
+   mv`) e cria o esqueleto de `to-do/done/TODO-NNN/RELEASE_NOTES.md`.
 3. Preencha o `RELEASE_NOTES.md` (troque cada `PREENCHER`):
    - **O que foi feito** — resumo direto.
    - **O que mudou em relação à versão anterior** — comportamento antes vs.
@@ -151,13 +204,18 @@ Docker**, nunca rodando `node server.js` direto no host.
 
 Só chegue aqui se o passo 5 (teste) passou limpo.
 
-1. Rode `finish-merge.sh todo/todo-nnn-slug` (o nome de branch que
-   `create-branch.sh` imprimiu no passo 3) — faz checkout de `main`,
-   `merge --no-ff`, `push origin main`, apaga a branch local, e imprime o
-   hash do commit de merge.
+1. Rode `finish-worktree.sh todo/todo-nnn-slug <caminho-da-worktree>` (o
+   nome de branch e o caminho que `create-worktree.sh` imprimiu no passo
+   3) — mescla numa worktree temporária destacada (sem depender do
+   checkout de `main` estar livre em lugar nenhum), dá push pra
+   `origin/main`, remove a worktree do TODO e a branch local, e imprime o
+   hash do commit de merge. **Rode de fora da worktree que está sendo
+   removida** (ex.: do diretório principal do repo) — o script apaga esse
+   diretório, então não pode ser o `cwd` de quem o chama.
 2. Se o script parar com conflito de merge, **pare e peça ajuda ao
-   Fernando** em vez de resolver sozinho (`git merge --abort` se precisar
-   desfazer e reavaliar).
+   Fernando** em vez de resolver sozinho — a mensagem de erro do script
+   aponta o caminho da worktree temporária de merge pra inspecionar/
+   resolver manualmente.
 3. Reporte ao Fernando: o que foi implementado, o hash do commit de merge
    (saída do script), e onde ficaram as release notes
    (`to-do/done/TODO-NNN/RELEASE_NOTES.md`).
@@ -169,6 +227,12 @@ Só chegue aqui se o passo 5 (teste) passou limpo.
 - Nunca faça merge/push se o teste do passo 5 não passou — pare e reporte.
 - Nunca invente evidência de teste (print, log, resultado) que não foi de
   fato observada nesta execução.
-- Uma execução desta skill = uma branch = um TODO. Não empacote vários
-  TODOs no mesmo commit/branch/merge mesmo que pareçam relacionados — rode
-  a skill de novo pra cada um.
+- Uma execução desta skill = uma worktree = uma branch = um TODO. Não
+  empacote vários TODOs no mesmo commit/branch/merge mesmo que pareçam
+  relacionados — rode a skill de novo (com uma worktree nova) pra cada um.
+- **Nunca rode `git checkout`/`git switch` no diretório principal do
+  repo** como parte desta skill — toda a implementação vive isolada na
+  worktree do passo 3, exatamente pra permitir que outra execução (outra
+  sessão, ou outra conversa do Fernando) rode em paralelo sem
+  interferência. Se dois TODOs precisarem rodar ao mesmo tempo, cada um
+  ganha sua própria worktree — nunca reaproveite a mesma.

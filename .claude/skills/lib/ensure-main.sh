@@ -1,15 +1,11 @@
 #!/usr/bin/env bash
-# Garante que o repo está em cima de `main`, sincronizado com origin/main,
-# antes de mexer no backlog em to-do/. Só chame isso depois de já ter
-# conferido `git status` e decidido que é seguro (working tree limpo, ou
-# só com mudanças dentro de to-do/) — este script não checa isso sozinho.
-set -euo pipefail
-cd "$(git rev-parse --show-toplevel)"
-
-git fetch origin --quiet
-current="$(git branch --show-current)"
-if [ "$current" != "main" ]; then
-  git checkout main
-fi
-git pull --ff-only origin main
-git branch --show-current
+# OBSOLETO — substituído pelo par create-worktree.sh / finish-worktree.sh.
+#
+# Este script fazia `git checkout main` no diretório compartilhado do
+# repo, o que colide com qualquer outra sessão usando aquele mesmo
+# checkout. O fluxo novo nunca precisa disso: `create-worktree.sh` cria
+# workspace a partir de `origin/main` sem fazer checkout de nada
+# compartilhado, e `finish-worktree.sh` mescla/publica numa worktree
+# temporária e destacada.
+echo "OBSOLETO: use create-worktree.sh / finish-worktree.sh (isolamento via git worktree) em vez de ensure-main.sh." >&2
+exit 1

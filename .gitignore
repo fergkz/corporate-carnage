@@ -3,3 +3,8 @@ node_modules/
 # Config local do Obsidian, se alguém abrir to-do/ como vault — não é
 # conteúdo do projeto.
 to-do/.obsidian/
+
+# Override de porta efêmera gerado por .claude/skills/lib/docker-up.sh
+# pra testar uma worktree isolada sem colidir com outra rodando em
+# paralelo — nunca é conteúdo versionado.
+docker-compose.worktree-override.yml

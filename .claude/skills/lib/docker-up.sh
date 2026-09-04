@@ -17,7 +17,7 @@ project="cc-$(echo "$slug" | tr -c 'a-z0-9' '-' | sed 's/-\+/-/g' | sed 's/^-\|-
 cat > docker-compose.worktree-override.yml <<'EOF'
 services:
   game:
-    ports:
+    ports: !override
       - "8080"
 EOF
 

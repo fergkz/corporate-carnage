@@ -1,6 +1,6 @@
 # TODO-002 — Míssil deve mirar na direção da mira, não no alvo mais próximo do mapa
 
-**Status**: pendente
+**Status**: concluído
 
 **Pedido original**: "O míssil deve ser disparado para onde o personagem
 está olhando (pra frente) e atingir o próximo algo que estiver naquela

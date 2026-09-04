@@ -698,9 +698,11 @@ function handleShot(room, player, data) {
 
   if (weapon.projectile) {
     const id = `rk${++room.projectileSequence}`;
+    const initialTarget = findTargetInDirection(room, player.x, player.y, baseAngle, weapon.range, player.id);
     room.projectiles.set(id, {
       id, kind: 'rocket', x: player.x, y: player.y, angle: baseAngle, speed: weapon.speed, damage: weapon.damage,
-      range: weapon.range, blastRadius: weapon.blastRadius, traveled: 0, ownerId: player.id, targetId: null,
+      range: weapon.range, blastRadius: weapon.blastRadius, traveled: 0, ownerId: player.id,
+      targetId: initialTarget ? initialTarget.id : null,
     });
     io.to(room.id).emit('shot', { id: player.id, weapon: data.weapon, x: player.x, y: player.y, angle: baseAngle, impacts: [] });
     return;
@@ -1073,20 +1075,25 @@ function lerpAngleServer(a, b, t) {
   return a + diff * t;
 }
 
-function findNearestEnemyForProjectile(room, proj) {
+const ROCKET_LOCK_RADIUS = 1.6; // "cone" de travamento — não precisa acertar em cheio
+
+// Alvo na direção pra onde o míssil está apontado (disparo ou reaquisição em
+// pleno voo), não o mais próximo do mapa — usa a mesma rayCircle das armas
+// hitscan pra achar "o que está à minha frente, dentro do alcance restante".
+function findTargetInDirection(room, originX, originY, angle, range, excludeId) {
+  const dirX = Math.cos(angle);
+  const dirY = Math.sin(angle);
   let best = null;
-  let bestDist = Infinity;
-  if (room.config.mode !== 'versus') {
-    for (const zombie of room.zombies.values()) {
-      const d = Math.hypot(zombie.x - proj.x, zombie.y - proj.y);
-      if (d < bestDist) { bestDist = d; best = zombie; }
-    }
+  let bestAlong = range;
+  for (const zombie of room.zombies.values()) {
+    const along = rayCircle(originX, originY, dirX, dirY, zombie.x, zombie.y, ROCKET_LOCK_RADIUS, range);
+    if (along !== null && along < bestAlong) { bestAlong = along; best = zombie; }
   }
-  if (room.config.mode === 'versus' || !best) {
+  if (room.config.mode !== 'coop') {
     for (const player of room.players.values()) {
-      if (player.id === proj.ownerId || !player.alive) continue;
-      const d = Math.hypot(player.x - proj.x, player.y - proj.y);
-      if (d < bestDist) { bestDist = d; best = player; }
+      if (player.id === excludeId || !player.alive) continue;
+      const along = rayCircle(originX, originY, dirX, dirY, player.x, player.y, ROCKET_LOCK_RADIUS, range);
+      if (along !== null && along < bestAlong) { bestAlong = along; best = player; }
     }
   }
   return best;
@@ -1111,7 +1118,10 @@ function explodeRocket(room, proj, x, y) {
 // em área ao encostar, bater numa parede ou esgotar o alcance.
 function updateRocket(room, proj, now, dt) {
   const currentTarget = proj.targetId ? (room.zombies.get(proj.targetId) || room.players.get(proj.targetId)) : null;
-  const liveTarget = (currentTarget && currentTarget.alive !== false) ? currentTarget : findNearestEnemyForProjectile(room, proj);
+  const remainingRange = Math.max(0, proj.range - proj.traveled);
+  const liveTarget = (currentTarget && currentTarget.alive !== false)
+    ? currentTarget
+    : findTargetInDirection(room, proj.x, proj.y, proj.angle, remainingRange, proj.ownerId);
   proj.targetId = liveTarget ? liveTarget.id : null;
   if (liveTarget) {
     const desiredAngle = Math.atan2(liveTarget.y - proj.y, liveTarget.x - proj.x);

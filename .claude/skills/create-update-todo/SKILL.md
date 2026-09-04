@@ -23,10 +23,29 @@ cada item só acontece quando o Fernando pedir explicitamente depois (ex.:
 - `to-do/README.md`: legenda do formato — mantenha-a atualizada se o
   formato dos itens mudar.
 
+## Antes de tudo: garanta que está na `main`
+
+O backlog é documentação, não precisa de branch isolada como o código de
+`execute-todo` — mas **tem que viver na `main`**, nunca ficar preso numa
+branch de feature esquecida (foi exatamente isso que bagunçou o backlog
+antes: itens e código de TODOs diferentes acumulando na branch errada).
+
+1. Rode `git status --short`. Se **não** estiver limpo com mudanças fora de
+   `to-do/` (ex.: código de uma implementação em andamento de
+   `execute-todo`), **pare e avise o Fernando** em vez de mexer em nada —
+   provavelmente há um `execute-todo` no meio do trabalho, e essa skill não
+   deve interferir.
+2. Se estiver limpo (ou só com mudanças dentro de `to-do/`), rode
+   `bash .claude/skills/lib/ensure-main.sh` — faz checkout de `main` (se
+   não estiver nela) e sincroniza com `origin/main`.
+3. Só então siga pro Modo 1 ou Modo 2 abaixo.
+
 ## Scripts (use-os em vez de fazer a parte mecânica na mão)
 
 Ficam em `.claude/skills/lib/`, compartilhados com a skill `execute-todo`:
 
+- `ensure-main.sh` — checkout + sincroniza `main` com `origin/main` (ver
+  seção acima).
 - `find-item.sh TODO-NNN` — acha o arquivo de um item (ativo em `to-do/`
   ou já arquivado em `to-do/done/`), imprime `STATUS=` e `PATH=`.
 - `scaffold-item.sh "Título curto"` — calcula o próximo ID livre (olhando
@@ -36,6 +55,14 @@ Ficam em `.claude/skills/lib/`, compartilhados com a skill `execute-todo`:
 Chame-os com `bash .claude/skills/lib/<script>.sh ...`. Isso evita ficar
 listando diretório e computando o próximo número manualmente — só rode o
 script e edite o conteúdo do arquivo que ele criar.
+
+Depois de criar/editar um item, **commite e envie pra `origin/main`
+direto** (sem branch, sem PR — é só documentação):
+```
+git add to-do/
+git commit -m "docs: {resumo curto do que mudou no backlog}"
+git push origin main
+```
 
 ## Modo 1 — Criar item novo
 

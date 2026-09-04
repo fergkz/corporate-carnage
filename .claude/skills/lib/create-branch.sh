@@ -4,12 +4,12 @@
 # Uso: create-branch.sh TODO-NNN slug-curto
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
+lib_dir="$(dirname "${BASH_SOURCE[0]}")"
 
 id="${1:?uso: create-branch.sh TODO-NNN slug-curto}"
 slug="${2:?uso: create-branch.sh TODO-NNN slug-curto}"
 
-git checkout main
-git pull --ff-only origin main
+"$lib_dir/ensure-main.sh" > /dev/null
 
 branch="todo/${id,,}-${slug}"
 git checkout -b "$branch"

@@ -10,6 +10,8 @@ const ARENA_BORDER = '#7a4a22';
 const SHIELD_CAPACITY = 60;
 const BASE_VISION = 8; // unidades de mundo visíveis normalmente (estilo Project Zomboid)
 const BOOSTED_VISION = 15; // unidades de mundo visíveis com o especial de visão ativo
+const EXPLORED_MASK_RES = 3; // px por unidade de mundo na máscara de exploração (baixa resolução, célula ~0.33 unidade)
+const STRETCH_WINDUP_MS = 550; // espelha o windupMs do zumbi "braço esticável" no servidor
 
 // ---------------------------------------------------------------------------
 // Sprites reais (pixel art), extraídos do pacote "Zombie Apocalypse Tileset"
@@ -17,7 +19,9 @@ const BOOSTED_VISION = 15; // unidades de mundo visíveis com o especial de vis�
 // Personagem, zumbis, armas e itens vêm de lá; o rifle não existia no pacote
 // e foi montado à mão na mesma paleta. Paredes/piso/mobília continuam sendo
 // desenhados por código (o pacote é de tema rural, não combinava com o
-// escritório).
+// escritório). Os zumbis especiais (tanque, braço esticável, bomba retocada)
+// são derivados via Pillow de frames do mesmo pacote; o cuspidor de ácido usa
+// o "Turret Zombie" do pacote, que já tinha uma animação de cuspir pronta.
 // ---------------------------------------------------------------------------
 
 const SPRITE_BASE = '/assets/sprites/';
@@ -30,9 +34,36 @@ function spriteReady(img) {
   return !!img && img.complete && img.naturalWidth > 0;
 }
 
+const ZOMBIE_TYPE_META = {
+  normal0: { sprite: 'zombie_skinny.png', size: 1.15, maxHp: 65 },
+  normal1: { sprite: 'zombie_kid.png', size: 1.15, maxHp: 65 },
+  normal2: { sprite: 'zombie_big.png', size: 1.15, maxHp: 65 },
+  bomb: { sprite: 'zombie_bomb.png', size: 1.15, maxHp: 65 },
+  tank: { sprite: 'zombie_tank.png', size: 1.55, maxHp: 260 },
+  stretcher: { sprite: 'zombie_stretcher.png', size: 1.15, maxHp: 70 },
+  acid: { sprite: 'zombie_spitter.png', size: 1.15, maxHp: 55 },
+  // Os 5 tipos abaixo reaproveitam corpos já existentes — a distinção visual
+  // vem do brilho colorido (ZOMBIE_GLOW), não de sprite dedicado, dado o
+  // volume de tipos novos pedidos numa única leva.
+  screamer: { sprite: 'zombie_skinny.png', size: 1.15, maxHp: 55 },
+  crawler: { sprite: 'zombie_kid.png', size: 0.9, maxHp: 30 },
+  armored: { sprite: 'zombie_big.png', size: 1.2, maxHp: 90 },
+  leaper: { sprite: 'zombie_stretcher.png', size: 1.15, maxHp: 60 },
+  gasser: { sprite: 'zombie_spitter.png', size: 1.15, maxHp: 50 },
+};
+
+const ZOMBIE_GLOW = {
+  screamer: '150,60,220',
+  crawler: '60,220,190',
+  armored: '150,170,190',
+  leaper: '255,150,40',
+  gasser: '140,220,80',
+};
+
 const sprites = {
   player: loadImage('player.png'),
-  zombie: [loadImage('zombie_skinny.png'), loadImage('zombie_kid.png'), loadImage('zombie_big.png')],
+  zombieByType: Object.fromEntries(Object.entries(ZOMBIE_TYPE_META).map(([id, meta]) => [id, loadImage(meta.sprite)])),
+  acidProjectile: loadImage('acid_projectile.png'),
   weaponIcon: {
     knife: loadImage('icon_knife.png'), pistol: loadImage('icon_pistol.png'),
     rifle: loadImage('icon_rifle.png'), shotgun: loadImage('icon_shotgun.png'),
@@ -97,9 +128,18 @@ const ZONES = [
 ];
 
 const canvas = document.querySelector('#scene');
-const ctx = canvas.getContext('2d');
+// `ctx` é `let`, não `const`, porque `renderRememberedLayer` a redireciona
+// temporariamente para `rememberedCtx` (ver `withCanvasContext`) pra reusar
+// drawFloor/drawWalls/drawProps sem duplicá-los.
+let ctx = canvas.getContext('2d');
 let width = innerWidth;
 let height = innerHeight;
+
+// Canvas offscreen onde a camada "lembrada" (chão/paredes/props escurecidos,
+// recortados pela máscara de exploração) é composta antes de ser colada na
+// tela — ver `renderRememberedLayer`.
+const rememberedCanvas = document.createElement('canvas');
+const rememberedCtx = rememberedCanvas.getContext('2d');
 
 function resize() {
   width = innerWidth;
@@ -111,22 +151,45 @@ function resize() {
   canvas.style.height = `${height}px`;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.imageSmoothingEnabled = false;
+  rememberedCanvas.width = canvas.width;
+  rememberedCanvas.height = canvas.height;
+  rememberedCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  rememberedCtx.imageSmoothingEnabled = false;
 }
 resize();
 addEventListener('resize', resize);
 
 const ui = {
-  start: document.querySelector('#start'), name: document.querySelector('#name'), deploy: document.querySelector('#deploy'),
+  landing: document.querySelector('#landing'), name: document.querySelector('#name'),
+  btnCreateRoom: document.querySelector('#btn-create-room'), btnJoinByCode: document.querySelector('#btn-join-by-code'),
+  roomCodeInput: document.querySelector('#room-code'), publicRooms: document.querySelector('#public-rooms'),
+  createRoomEl: document.querySelector('#createRoom'), createRoomTitle: document.querySelector('#createRoom-title'), roomNameInput: document.querySelector('#room-name'),
+  roomMaxInput: document.querySelector('#room-max'), zombieCountInput: document.querySelector('#zombie-count'),
+  npcCountInput: document.querySelector('#npc-count'), scoreLimitInput: document.querySelector('#score-limit'),
+  roomCreateBack: document.querySelector('#room-create-back'),
+  roomCreateSubmit: document.querySelector('#room-create-submit'),
+  lobbyEl: document.querySelector('#lobby'), lobbyRoomName: document.querySelector('#lobby-room-name'),
+  lobbyRoomCode: document.querySelector('#lobby-room-code'), lobbyCopyLink: document.querySelector('#lobby-copy-link'),
+  lobbyPlayers: document.querySelector('#lobby-players'), lobbyStart: document.querySelector('#lobby-start'),
+  lobbyStatus: document.querySelector('#lobby-status'), lobbySettings: document.querySelector('#lobby-settings'),
+  lobbyLeave: document.querySelector('#lobby-leave'),
   health: document.querySelector('#health-number'), healthFill: document.querySelector('#health-fill'), timer: document.querySelector('#timer span'),
   scoreboard: document.querySelector('#scoreboard'), connection: document.querySelector('#connection'), weapon: document.querySelector('#weapon-name'),
-  slots: [...document.querySelectorAll('.slot')], announcement: document.querySelector('#announcement'), damage: document.querySelector('#damage'),
+  slots: [...document.querySelectorAll('#weapon-slots .slot')], announcement: document.querySelector('#announcement'), damage: document.querySelector('#damage'),
   killfeed: document.querySelector('#killfeed'), ammo: document.querySelector('#ammo'), pickup: document.querySelector('#pickup-toast'),
   shieldBar: document.querySelector('#shield-bar'), shieldFill: document.querySelector('#shield-fill'), grenadeCount: document.querySelector('#grenade-count'),
   roundend: document.querySelector('#roundend'), roundendScoreboard: document.querySelector('#roundend-scoreboard'),
   roundendReady: document.querySelector('#roundend-ready'), roundendStatus: document.querySelector('#roundend-status'),
+  roundendLobby: document.querySelector('#roundend-lobby'), roundendLeave: document.querySelector('#roundend-leave'),
 };
 
 let world = { walls: [], props: [], arena: 22 };
+// Máscara de exploração: memória local de "por onde o jogador já passou"
+// nesta partida. Começa totalmente transparente (nada explorado) e cada
+// célula fica opaca pra sempre assim que o jogador visita — nunca volta a
+// escurecer. Resetada só quando `world` é reatribuído (nova sala/partida),
+// não a cada respawn.
+let exploredMask = null; // { canvas, ctx, arena }
 let selfId = null;
 let deployed = false;
 let currentWeapon = 'knife';
@@ -139,8 +202,23 @@ let mouseY = height / 2;
 let visionRadius = BASE_VISION;
 const keys = new Set();
 
-const entities = new Map(); // id -> render state (interpolated)
-const targets = new Map(); // id -> latest snapshot data
+// --- Estado de sessão (sala/lobby) ---
+let clientState = 'landing'; // 'landing' | 'createRoom' | 'lobby' | 'playing' | 'roundEnd'
+let roomId = null;
+let roomCode = null;
+let isHost = false;
+
+function setClientState(next) {
+  clientState = next;
+  deployed = next === 'playing';
+  ui.landing.style.display = next === 'landing' ? 'grid' : 'none';
+  ui.createRoomEl.style.display = next === 'createRoom' ? 'grid' : 'none';
+  ui.lobbyEl.style.display = next === 'lobby' ? 'grid' : 'none';
+  if (next === 'landing') requestRoomList();
+}
+
+const entities = new Map(); // id -> render state (interpolada), inclui players/zombies/projéteis
+const targets = new Map(); // id -> último dado do snapshot
 const pickupsState = [];
 const tracers = [];
 const explosions = [];
@@ -232,6 +310,15 @@ function drawWeaponInHand(weapon, angle, flashUntil, flashWeapon, now) {
     const flashW = 0.5;
     ctx.drawImage(flash, size * 0.7, -flashW * flashAspect / 2, flashW, flashW * flashAspect);
   }
+  ctx.restore();
+}
+
+function drawGrenadeInHand(angle, now) {
+  const sway = Math.sin(now / 180) * 0.05;
+  ctx.save();
+  ctx.rotate(angle + sway);
+  ctx.translate(0.4, 0.1);
+  drawGrenadeIcon(ctx);
   ctx.restore();
 }
 
@@ -608,6 +695,8 @@ function drawPickups(now) {
     } else if (pickup.kind === 'grenade') {
       ctx.rotate(Math.sin(now * 0.0015 + pickup.x) * 0.4);
       drawGrenadeIcon(ctx);
+    } else if (pickup.kind === 'weapon' && pickup.weapon === 'rocket') {
+      drawRocketIcon(ctx);
     } else if (pickup.kind === 'weapon') {
       drawImageIcon(sprites.weaponIcon[pickup.weapon], 0.85);
     } else {
@@ -704,16 +793,35 @@ function drawBloodBursts(dt) {
   }
 }
 
-// O pacote de sprites só tem 3 zumbis; a variante 4 ("bomba", vinda do servidor)
-// reaproveita o corpo do zumbi grande com um brilho vermelho pulsante por cima.
-const ZOMBIE_SPRITE_INDEX = [0, 1, 2, 2];
+// Telegraph do zumbi "braço esticável": um traço que estica e fica mais
+// vermelho/brilhante conforme o golpe se aproxima — dá uma janela real de
+// esquiva antes do impacto, na mesma linguagem visual do glow do zumbi bomba.
+function drawStretchTelegraph(entity) {
+  const remaining = (entity.phaseAt || 0) - Date.now();
+  if (remaining <= 0 || remaining > STRETCH_WINDUP_MS) return;
+  const t = 1 - Math.max(0, Math.min(1, remaining / STRETCH_WINDUP_MS));
+  const reach = 0.6 + t * 1.4;
+  ctx.save();
+  ctx.translate(entity.x, entity.y - 0.5);
+  ctx.rotate(entity.angle);
+  const grad = ctx.createLinearGradient(0, 0, reach, 0);
+  grad.addColorStop(0, 'rgba(120,40,30,0.9)');
+  grad.addColorStop(1, `rgba(255,${Math.round(80 - t * 60)},${Math.round(60 - t * 40)},${0.5 + t * 0.4})`);
+  ctx.strokeStyle = grad;
+  ctx.lineWidth = 0.14 + t * 0.06;
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(reach, 0); ctx.stroke();
+  ctx.restore();
+}
 
 function drawZombies(now) {
   for (const [, entity] of entities) {
     if (entity.kind !== 'zombie' || entity.alive === false) continue;
+    const meta = ZOMBIE_TYPE_META[entity.typeId] || ZOMBIE_TYPE_META.normal0;
+    const displayW = meta.size;
+    const shadowScale = displayW / 1.15;
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
-    ctx.beginPath(); ctx.ellipse(entity.x, entity.y + 0.1, 0.5, 0.22, 0, 0, Math.PI * 2); ctx.fill();
-    if (entity.variant === 3) {
+    ctx.beginPath(); ctx.ellipse(entity.x, entity.y + 0.1, 0.5 * shadowScale, 0.22 * shadowScale, 0, 0, Math.PI * 2); ctx.fill();
+    if (entity.typeId === 'bomb') {
       const armed = entity.fuseAt > 0;
       const pulse = 0.5 + 0.5 * Math.sin(now / (armed ? 55 : 220));
       const glowRadius = armed ? 0.95 : 0.75;
@@ -723,16 +831,111 @@ function drawZombies(now) {
       ctx.fillStyle = glow;
       ctx.beginPath(); ctx.arc(entity.x, entity.y, glowRadius, 0, Math.PI * 2); ctx.fill();
     }
-    drawCreatureSprite(plainSheet(sprites.zombie[ZOMBIE_SPRITE_INDEX[entity.variant || 0]]), entity.x, entity.y, entity.angle, 1.15, entity.alive);
-    if (typeof entity.hp === 'number' && entity.hp < 65) {
-      const barWidth = 0.7;
+    const glowColor = ZOMBIE_GLOW[entity.typeId];
+    if (glowColor) {
+      const pulse = 0.5 + 0.5 * Math.sin(now / 260);
+      const glowRadius = 0.7 * shadowScale;
+      const glow = ctx.createRadialGradient(entity.x, entity.y, 0, entity.x, entity.y, glowRadius);
+      glow.addColorStop(0, `rgba(${glowColor},${0.4 * pulse})`);
+      glow.addColorStop(1, `rgba(${glowColor},0)`);
+      ctx.fillStyle = glow;
+      ctx.beginPath(); ctx.arc(entity.x, entity.y, glowRadius, 0, Math.PI * 2); ctx.fill();
+    }
+    if (entity.typeId === 'stretcher' && entity.stretchPhase === 'windup') drawStretchTelegraph(entity);
+    drawCreatureSprite(plainSheet(sprites.zombieByType[entity.typeId]) || plainSheet(sprites.zombieByType.normal0), entity.x, entity.y, entity.angle, displayW, entity.alive);
+    if (typeof entity.hp === 'number' && entity.hp < meta.maxHp) {
+      const barWidth = 0.7 * shadowScale;
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
-      ctx.fillRect(entity.x - barWidth / 2, entity.y - 0.85, barWidth, 0.08);
+      ctx.fillRect(entity.x - barWidth / 2, entity.y - 0.85 * shadowScale, barWidth, 0.08);
       ctx.fillStyle = '#bf3c35';
-      ctx.fillRect(entity.x - barWidth / 2, entity.y - 0.85, barWidth * Math.max(0, entity.hp / 65), 0.08);
+      ctx.fillRect(entity.x - barWidth / 2, entity.y - 0.85 * shadowScale, barWidth * Math.max(0, entity.hp / meta.maxHp), 0.08);
     }
   }
-  void now;
+}
+
+function drawAcidProjectiles() {
+  for (const [, entity] of entities) {
+    if (entity.kind !== 'projectile') continue;
+    if (entity.projectileKind === 'rocket') continue; // desenhado em drawRockets()
+    ctx.save();
+    const glow = ctx.createRadialGradient(entity.x, entity.y, 0, entity.x, entity.y, 0.22);
+    glow.addColorStop(0, 'rgba(150,230,60,0.85)');
+    glow.addColorStop(1, 'rgba(150,230,60,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(entity.x, entity.y, 0.22, 0, Math.PI * 2); ctx.fill();
+    if (spriteReady(sprites.acidProjectile)) {
+      const aspect = sprites.acidProjectile.naturalHeight / sprites.acidProjectile.naturalWidth;
+      const w = 0.32;
+      ctx.drawImage(sprites.acidProjectile, entity.x - w / 2, entity.y - w * aspect / 2, w, w * aspect);
+    }
+    ctx.restore();
+  }
+}
+
+function drawGasHazards(now) {
+  for (const [, entity] of entities) {
+    if (entity.kind !== 'hazard') continue;
+    const pulse = 0.5 + 0.5 * Math.sin(now / 300);
+    const glow = ctx.createRadialGradient(entity.x, entity.y, 0, entity.x, entity.y, entity.radius || 2);
+    glow.addColorStop(0, `rgba(120,200,70,${0.28 * pulse})`);
+    glow.addColorStop(1, 'rgba(120,200,70,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(entity.x, entity.y, entity.radius || 2, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+function drawRocketIcon(iconCtx) {
+  iconCtx.fillStyle = '#8a929a';
+  iconCtx.beginPath();
+  iconCtx.moveTo(0.24, 0);
+  iconCtx.lineTo(-0.1, -0.08);
+  iconCtx.lineTo(-0.1, 0.08);
+  iconCtx.closePath();
+  iconCtx.fill();
+  iconCtx.fillStyle = '#3a474c';
+  iconCtx.fillRect(-0.24, -0.06, 0.16, 0.12);
+  iconCtx.fillStyle = '#c45d42';
+  iconCtx.beginPath();
+  iconCtx.moveTo(-0.24, -0.06); iconCtx.lineTo(-0.34, -0.12); iconCtx.lineTo(-0.24, -0.02); iconCtx.closePath(); iconCtx.fill();
+  iconCtx.beginPath();
+  iconCtx.moveTo(-0.24, 0.06); iconCtx.lineTo(-0.34, 0.12); iconCtx.lineTo(-0.24, 0.02); iconCtx.closePath(); iconCtx.fill();
+}
+
+function drawRockets() {
+  for (const [, entity] of entities) {
+    if (entity.kind !== 'projectile' || entity.projectileKind !== 'rocket') continue;
+    ctx.save();
+    ctx.translate(entity.x, entity.y);
+    ctx.rotate(entity.angle || 0);
+    const flame = ctx.createRadialGradient(-0.28, 0, 0, -0.28, 0, 0.22);
+    flame.addColorStop(0, 'rgba(255,180,80,0.8)');
+    flame.addColorStop(1, 'rgba(255,120,40,0)');
+    ctx.fillStyle = flame;
+    ctx.beginPath(); ctx.arc(-0.28, 0, 0.22, 0, Math.PI * 2); ctx.fill();
+    drawRocketIcon(ctx);
+    ctx.restore();
+  }
+}
+
+// Lâminas giratórias: renderizadas para qualquer jogador com o buff ativo
+// (inclusive outros agentes/NPCs, não só o local), orbitando em volta dele.
+function drawBladesAura(entity, now) {
+  if (!(entity.bladesUntil > Date.now())) return;
+  const count = 3;
+  const radius = 0.85;
+  for (let i = 0; i < count; i += 1) {
+    const angle = now / 260 + (i * Math.PI * 2) / count;
+    const bx = entity.x + Math.cos(angle) * radius;
+    const by = entity.y + Math.sin(angle) * radius;
+    ctx.save();
+    ctx.translate(bx, by);
+    ctx.rotate(angle + Math.PI / 2);
+    ctx.fillStyle = '#d8e0e3';
+    ctx.beginPath();
+    ctx.moveTo(0, -0.16); ctx.lineTo(0.05, 0.1); ctx.lineTo(-0.05, 0.1); ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
 }
 
 function drawPlayers(now) {
@@ -747,10 +950,19 @@ function drawPlayers(now) {
     if (entity.swingUntil > now) {
       const swingProgress = 1 - Math.min(1, Math.max(0, (entity.swingUntil - now) / 150));
       drawKnifeSwipe(entity.angle, swingProgress);
+    } else if (weapon === 'grenade') {
+      drawGrenadeInHand(entity.angle, now);
+    } else if (weapon === 'rocket') {
+      ctx.save();
+      ctx.rotate(entity.angle);
+      ctx.translate(0.42, 0.12);
+      drawRocketIcon(ctx);
+      ctx.restore();
     } else {
       drawWeaponInHand(weapon, entity.angle, entity.flashUntil || 0, entity.flashWeapon, now);
     }
     ctx.restore();
+    drawBladesAura(entity, now);
     if (entity.shield > 0) {
       ctx.strokeStyle = 'rgba(63,127,209,0.85)';
       ctx.lineWidth = 0.09;
@@ -764,7 +976,7 @@ function drawPlayers(now) {
       ctx.font = `${11 / SCALE}px Inter, sans-serif`;
       ctx.textAlign = 'center';
       ctx.fillStyle = 'rgba(220,230,232,0.85)';
-      ctx.fillText(entity.name || '', entity.x, entity.y - 1.05);
+      ctx.fillText(`${entity.name || ''}${entity.isBot ? ' · NPC' : ''}`, entity.x, entity.y - 1.05);
       const barWidth = 0.9;
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
       ctx.fillRect(entity.x - barWidth / 2, entity.y - 0.95, barWidth, 0.1);
@@ -799,6 +1011,90 @@ function drawReticle() {
   ctx.restore();
 }
 
+// Proporções da elipse de visão (alongada e deslocada na direção da mira),
+// compartilhadas entre `drawFogOfWar` (vinheta em espaço de tela) e
+// `clipToVisionCone` (recorte em espaço de mundo) pra ambas desenharem
+// exatamente a mesma forma.
+const VISION_RY_RATIO = 0.58;
+const VISION_FORWARD_SHIFT_RATIO = 0.32;
+
+function resetExploredMask(arena) {
+  const size = Math.max(1, Math.ceil(arena * 2 * EXPLORED_MASK_RES));
+  const maskCanvas = document.createElement('canvas');
+  maskCanvas.width = size;
+  maskCanvas.height = size;
+  exploredMask = { canvas: maskCanvas, ctx: maskCanvas.getContext('2d'), arena };
+}
+
+// "Queima" permanentemente um círculo revelado na máscara de exploração na
+// posição atual do jogador — pintura normal (source-over) que só soma
+// opacidade, nunca escurece de volta uma área já revelada.
+function burnExploredMask(x, y, radiusWorldUnits) {
+  if (!exploredMask) return;
+  const mctx = exploredMask.ctx;
+  const mx = (x + exploredMask.arena) * EXPLORED_MASK_RES;
+  const my = (y + exploredMask.arena) * EXPLORED_MASK_RES;
+  const r = radiusWorldUnits * EXPLORED_MASK_RES;
+  const grad = mctx.createRadialGradient(mx, my, r * 0.35, mx, my, r);
+  grad.addColorStop(0, 'rgba(0,0,0,1)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  mctx.fillStyle = grad;
+  mctx.beginPath();
+  mctx.arc(mx, my, r, 0, Math.PI * 2);
+  mctx.fill();
+}
+
+// Redireciona temporariamente o `ctx` global pra `targetCtx` — permite reusar
+// drawFloor/drawWalls/drawProps (que sempre desenham no `ctx` do módulo) pra
+// compor a camada "lembrada" num canvas offscreen, sem duplicar essas funções.
+function withCanvasContext(targetCtx, fn) {
+  const prev = ctx;
+  ctx = targetCtx;
+  fn();
+  ctx = prev;
+}
+
+// Camada "lembrada": chão + paredes + props (sem entidades, pickups ou
+// efeitos) desenhados escurecidos e recortados pela `exploredMask` — a
+// silhueta estática do que o jogador já visitou, mas não está vendo agora.
+function renderRememberedLayer(camX, camY, arena) {
+  rememberedCtx.clearRect(0, 0, rememberedCanvas.width, rememberedCanvas.height);
+  withCanvasContext(rememberedCtx, () => {
+    ctx.save();
+    ctx.translate(width / 2, height / 2);
+    ctx.scale(SCALE, SCALE);
+    ctx.translate(-camX, -camY);
+    drawFloor(arena);
+    drawWalls();
+    drawProps();
+    ctx.fillStyle = 'rgba(0,0,0,0.72)';
+    ctx.fillRect(-arena, -arena, arena * 2, arena * 2);
+    ctx.globalCompositeOperation = 'destination-in';
+    ctx.drawImage(exploredMask.canvas, -arena, -arena, arena * 2, arena * 2);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.restore();
+  });
+}
+
+// Recorta os desenhos seguintes (dentro do `ctx.save()` de `render`) à mesma
+// elipse de visão de `drawFogOfWar`, mas em espaço de mundo — garante que
+// zumbis/jogadores/pickups/efeitos nunca apareçam fora do raio de visão
+// atual, mesmo na franja onde o gradiente da vinheta ainda não está 100% opaco.
+function clipToVisionCone(camX, camY, angle, radiusWorldUnits) {
+  const rx = radiusWorldUnits;
+  const ry = rx * VISION_RY_RATIO;
+  const forwardShift = rx * VISION_FORWARD_SHIFT_RATIO;
+  ctx.save();
+  ctx.translate(camX, camY);
+  ctx.rotate(angle || 0);
+  ctx.translate(forwardShift, 0);
+  ctx.scale(1, ry / rx);
+  ctx.beginPath();
+  ctx.arc(0, 0, rx, 0, Math.PI * 2);
+  ctx.restore();
+  ctx.clip();
+}
+
 // Vinheta de campo de visão limitado (estilo Project Zomboid): desenhada em
 // espaço de tela (a câmera sempre centraliza o jogador local em width/2,
 // height/2), então um gradiente radial centrado no meio da tela já corresponde
@@ -807,16 +1103,17 @@ function drawReticle() {
 // uniforme — por isso se vê bem mais longe pra frente do que pros lados/trás.
 function drawFogOfWar(radiusWorldUnits, angle) {
   const rx = radiusWorldUnits * SCALE;
-  const ry = rx * 0.58;
-  const forwardShift = rx * 0.32;
+  const ry = rx * VISION_RY_RATIO;
+  const forwardShift = rx * VISION_FORWARD_SHIFT_RATIO;
   ctx.save();
   ctx.translate(width / 2, height / 2);
   ctx.rotate(angle || 0);
   ctx.translate(forwardShift, 0);
   ctx.scale(1, ry / rx);
-  const grad = ctx.createRadialGradient(0, 0, rx * 0.32, 0, 0, rx);
+  const grad = ctx.createRadialGradient(0, 0, rx * 0.26, 0, 0, rx);
   grad.addColorStop(0, 'rgba(2,5,6,0)');
-  grad.addColorStop(1, 'rgba(2,5,6,0.97)');
+  grad.addColorStop(0.75, 'rgba(2,5,6,0.85)');
+  grad.addColorStop(1, 'rgba(2,5,6,1)');
   ctx.fillStyle = grad;
   ctx.fillRect(-6000, -6000, 12000, 12000);
   ctx.restore();
@@ -826,16 +1123,26 @@ function render(now, dt) {
   const self = entities.get(selfId);
   const camX = self ? self.x : 0;
   const camY = self ? self.y : 0;
+  const angle = aimAngle();
 
   ctx.save();
   ctx.fillStyle = '#05090c';
   ctx.fillRect(0, 0, width, height);
+
+  if (deployed && exploredMask) {
+    burnExploredMask(camX, camY, visionRadius);
+    renderRememberedLayer(camX, camY, world.arena);
+    ctx.drawImage(rememberedCanvas, 0, 0, width, height);
+  }
+
   ctx.translate(width / 2, height / 2);
   ctx.scale(SCALE, SCALE);
   ctx.translate(-camX, -camY);
+  if (deployed) clipToVisionCone(camX, camY, angle, visionRadius);
 
   drawFloor(world.arena);
   drawBloodStains(now);
+  drawGasHazards(now);
   drawWalls();
   drawProps();
   drawPickups(now);
@@ -843,12 +1150,14 @@ function render(now, dt) {
   drawZombies(now);
   drawPlayers(now);
   drawTracers(dt);
+  drawAcidProjectiles();
+  drawRockets();
   drawBloodBursts(dt);
   drawExplosions(dt);
   ctx.restore();
 
   if (deployed) {
-    drawFogOfWar(visionRadius, aimAngle());
+    drawFogOfWar(visionRadius, angle);
     drawReticle();
   }
 }
@@ -891,10 +1200,16 @@ function interpolate(dt) {
     entity.alive = target.alive;
     entity.name = target.name;
     entity.color = target.color;
-    entity.variant = target.variant;
+    entity.typeId = target.typeId;
     entity.weapon = target.weapon;
     entity.shield = target.shield;
     entity.fuseAt = target.fuseAt;
+    entity.stretchPhase = target.stretchPhase;
+    entity.phaseAt = target.phaseAt;
+    entity.isBot = target.isBot;
+    entity.projectileKind = target.kind;
+    entity.radius = target.radius;
+    entity.bladesUntil = target.bladesUntil;
   }
 }
 
@@ -902,49 +1217,59 @@ function escapeHtml(value) {
   return String(value).replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
 }
 
-function updateHud(players) {
-  const self = players.find((player) => player.id === selfId);
-  if (self) {
-    selfState = self;
-    // `visionBoostUntil` vem de um pickup especial de visão tratado no servidor;
-    // aqui só decidimos o raio de visão local a partir dele.
-    visionRadius = (self.visionBoostUntil > Date.now()) ? BOOSTED_VISION : BASE_VISION;
-    if (self.weapon !== currentWeapon) activateWeapon(self.weapon, false);
-    if (self.hp < lastHp) { ui.damage.style.opacity = '.78'; setTimeout(() => { ui.damage.style.opacity = '0'; }, 130); }
-    lastHp = self.hp;
-    ui.health.textContent = self.hp;
-    ui.healthFill.style.width = `${self.hp}%`;
-    ui.ammo.textContent = currentWeapon === 'knife' ? '∞' : String(self.ammo[currentWeapon] ?? 0);
-    const order = ['knife', 'pistol', 'rifle', 'shotgun'];
-    ui.slots.forEach((slot, index) => slot.classList.toggle('locked', !self.inventory.includes(order[index])));
-    const shieldPct = Math.round(((self.shield || 0) / SHIELD_CAPACITY) * 100);
-    ui.shieldFill.style.width = `${shieldPct}%`;
-    ui.shieldBar.classList.toggle('active', shieldPct > 0);
-    ui.grenadeCount.textContent = String(self.grenades || 0);
+function showToast(text) {
+  ui.pickup.textContent = text;
+  ui.pickup.classList.add('show');
+  setTimeout(() => ui.pickup.classList.remove('show'), 1800);
+}
+
+// --- Armas: slots trocam no scroll do mouse; granada entra no mesmo ciclo ---
+const SLOT_ORDER = ['knife', 'pistol', 'rifle', 'shotgun', 'rocket', 'grenade'];
+const WEAPON_LABELS = { knife: 'FACA TÁTICA', pistol: 'PISTOLA P9', rifle: 'RIFLE AR-21', shotgun: 'ESCOPETA M12', rocket: 'LANÇA-MÍSSEIS', grenade: 'GRANADA' };
+
+function availableSlots() {
+  if (!selfState) return ['knife'];
+  return SLOT_ORDER.filter((slot) => (
+    slot === 'knife' ? true :
+    slot === 'grenade' ? (selfState.grenades || 0) > 0 :
+    selfState.inventory.includes(slot)
+  ));
+}
+
+// Depois de uma troca local (scroll/tecla), o servidor demora um round-trip
+// pra confirmar `player.weapon` — sem essa janela de graça, o resync abaixo em
+// updateHud() reverte a troca de volta ao valor antigo assim que o próximo
+// snapshot (ainda desatualizado) chega, fazendo o scroll parecer quebrado.
+let lastLocalWeaponChangeAt = 0;
+function activateSlot(slot, emit = true) {
+  if (!SLOT_ORDER.includes(slot)) return;
+  if (emit && !availableSlots().includes(slot)) return;
+  currentWeapon = slot;
+  if (emit) {
+    lastLocalWeaponChangeAt = performance.now();
+    if (slot !== 'grenade') socket.emit('weapon', slot);
   }
-  const seconds = Math.max(0, Math.ceil((matchEndsAt - Date.now()) / 1000));
-  ui.timer.textContent = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
-  const sorted = [...players].sort((a, b) => b.score - a.score);
-  ui.scoreboard.innerHTML = `<div class="score-head"><span>AGENTE</span><span>PTS</span><span>K</span></div>${sorted.map((p) => `<div class="score-row ${p.id === selfId ? 'self' : ''}"><span>${escapeHtml(p.name)}</span><b>${p.score}</b><span>${p.kills}</span></div>`).join('')}`;
+  const index = SLOT_ORDER.indexOf(slot);
+  ui.slots.forEach((el, i) => el.classList.toggle('active', i === index));
+  ui.weapon.textContent = WEAPON_LABELS[slot];
 }
 
-function activateWeapon(weapon, emit = true) {
-  const order = ['knife', 'pistol', 'rifle', 'shotgun'];
-  const index = order.indexOf(weapon);
-  if (index < 0 || (emit && selfState && !selfState.inventory.includes(weapon))) return;
-  currentWeapon = weapon;
-  if (emit) socket.emit('weapon', weapon);
-  ui.slots.forEach((slot, i) => slot.classList.toggle('active', i === index));
-  ui.weapon.textContent = ['FACA TÁTICA', 'PISTOLA P9', 'RIFLE AR-21', 'ESCOPETA M12'][index];
+function cycleWeapon(direction) {
+  const slots = availableSlots();
+  if (slots.length <= 1) return;
+  const idx = slots.indexOf(currentWeapon);
+  const next = slots[(idx + direction + slots.length + slots.length) % slots.length];
+  activateSlot(next);
 }
 
-const cooldowns = { knife: 480, pistol: 330, rifle: 110, shotgun: 720 };
+const cooldowns = { knife: 480, pistol: 330, rifle: 110, shotgun: 720, rocket: 1600 };
+const AMMO_COST = { pistol: 1, rifle: 1, shotgun: 3, rocket: 10 };
 function attemptShoot() {
-  if (!deployed) return;
+  if (!deployed || currentWeapon === 'grenade') return;
   const now = performance.now();
   if (now - lastClientShot < cooldowns[currentWeapon]) return;
   lastClientShot = now;
-  socket.emit('shoot', { weapon: currentWeapon, angle: aimAngle() });
+  socket.emit('fire', { weapon: currentWeapon, angle: aimAngle() });
 }
 
 let lastClientGrenade = 0;
@@ -954,21 +1279,272 @@ function attemptGrenade() {
   if (now - lastClientGrenade < 900) return;
   lastClientGrenade = now;
   const cursorDistance = Math.hypot(mouseX - width / 2, mouseY - height / 2) / SCALE;
-  socket.emit('throwGrenade', { angle: aimAngle(), distance: cursorDistance });
+  socket.emit('fire', { weapon: 'grenade', angle: aimAngle(), distance: cursorDistance });
 }
 
+function attemptFire() {
+  if (!deployed) return;
+  if (currentWeapon === 'grenade') attemptGrenade();
+  else attemptShoot();
+}
+
+function updateHud(players) {
+  const self = players.find((player) => player.id === selfId);
+  if (self) {
+    selfState = self;
+    // `visionBoostUntil` vem de um pickup especial de visão tratado no servidor;
+    // aqui só decidimos o raio de visão local a partir dele.
+    visionRadius = (self.visionBoostUntil > Date.now()) ? BOOSTED_VISION : BASE_VISION;
+    const recentLocalChange = performance.now() - lastLocalWeaponChangeAt < 500;
+    if (currentWeapon !== 'grenade' && self.weapon !== currentWeapon && !recentLocalChange) activateSlot(self.weapon, false);
+    if (self.hp < lastHp) { ui.damage.style.opacity = '.78'; setTimeout(() => { ui.damage.style.opacity = '0'; }, 130); }
+    lastHp = self.hp;
+    ui.health.textContent = self.hp;
+    ui.healthFill.style.width = `${self.hp}%`;
+    ui.ammo.textContent = currentWeapon === 'knife' ? '∞' : currentWeapon === 'grenade' ? String(self.grenades || 0) : String(Math.floor((self.ammo ?? 0) / (AMMO_COST[currentWeapon] || 1)));
+    ui.slots.forEach((slot, index) => {
+      const name = SLOT_ORDER[index];
+      const locked = name === 'knife' ? false : name === 'grenade' ? !((self.grenades || 0) > 0) : !self.inventory.includes(name);
+      slot.classList.toggle('locked', locked);
+    });
+    const shieldPct = Math.round(((self.shield || 0) / SHIELD_CAPACITY) * 100);
+    ui.shieldFill.style.width = `${shieldPct}%`;
+    ui.shieldBar.classList.toggle('active', shieldPct > 0);
+    ui.grenadeCount.textContent = String(self.grenades || 0);
+  }
+  const seconds = Math.max(0, Math.ceil((matchEndsAt - Date.now()) / 1000));
+  ui.timer.textContent = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+  const sorted = [...players].sort((a, b) => b.score - a.score);
+  ui.scoreboard.innerHTML = `<div class="score-head"><span>AGENTE</span><span>PTS</span><span>K</span></div>${sorted.map((p) => `<div class="score-row ${p.id === selfId ? 'self' : ''}"><span>${escapeHtml(p.name)}${p.isBot ? ' <small style="opacity:.6">NPC</small>' : ''}</span><b>${p.score}</b><span>${p.kills}</span></div>`).join('')}`;
+}
+
+// --- Sessão: lobby, criação/entrada em salas ---
+
+const MODE_LABEL = { coop: 'COOP', versus: 'VERSUS' };
+const LIFE_LABEL = { respawn: 'RESPAWN', battleRoyale: 'BATTLE ROYALE' };
+const ZOMBIE_MODE_LABEL = { fixed: 'FIXA', constant: 'CONSTANTE', evolution: 'EVOLUÇÃO' };
+const JOIN_ERROR_LABEL = {
+  not_found: 'Sala não encontrada', full: 'Sala cheia', already_started: 'Partida já em andamento',
+  not_public: 'Sala não é pública', already_in_room: 'Você já está em uma sala', server_full: 'Servidor cheio',
+};
+
+const DEFAULT_ROOM_CONFIG = { visibility: 'public', mode: 'coop', lifeMode: 'respawn', zombieSpawnMode: 'constant', npcDifficulty: 'standard' };
+const roomConfig = { ...DEFAULT_ROOM_CONFIG };
+let editingExistingRoom = false;
+let latestRoomSettings = null;
+let latestRoomVisibility = 'public';
+let latestRoomName = '';
+
+function setupOptGroup(selector, axis) {
+  const container = document.querySelector(selector);
+  if (!container) return;
+  container.querySelectorAll('.opt').forEach((opt) => {
+    opt.addEventListener('click', () => {
+      container.querySelectorAll('.opt').forEach((el) => el.classList.remove('active'));
+      opt.classList.add('active');
+      roomConfig[axis] = opt.dataset.value;
+    });
+  });
+}
+setupOptGroup('#opt-visibility', 'visibility');
+setupOptGroup('#opt-mode', 'mode');
+setupOptGroup('#opt-lifemode', 'lifeMode');
+setupOptGroup('#opt-zombiemode', 'zombieSpawnMode');
+setupOptGroup('#opt-npcdiff', 'npcDifficulty');
+
+function setOptGroupValue(selector, value) {
+  const container = document.querySelector(selector);
+  if (!container) return;
+  container.querySelectorAll('.opt').forEach((el) => el.classList.toggle('active', el.dataset.value === value));
+}
+
+// Preenche o formulário de criar-sala com uma config existente — reaproveitado
+// tanto para resetar aos padrões quanto para abrir "AJUSTAR CONFIGURAÇÕES".
+function applySettingsToForm(settings, visibility, name) {
+  roomConfig.visibility = visibility || 'public';
+  roomConfig.mode = settings.mode;
+  roomConfig.lifeMode = settings.lifeMode;
+  roomConfig.zombieSpawnMode = settings.zombieSpawnMode;
+  roomConfig.npcDifficulty = settings.npcDifficulty;
+  setOptGroupValue('#opt-visibility', roomConfig.visibility);
+  setOptGroupValue('#opt-mode', roomConfig.mode);
+  setOptGroupValue('#opt-lifemode', roomConfig.lifeMode);
+  setOptGroupValue('#opt-zombiemode', roomConfig.zombieSpawnMode);
+  setOptGroupValue('#opt-npcdiff', roomConfig.npcDifficulty);
+  ui.roomNameInput.value = name || '';
+  ui.roomMaxInput.value = settings.maxPlayers;
+  ui.zombieCountInput.value = settings.zombieBaseCount;
+  ui.npcCountInput.value = settings.npcCount;
+  ui.scoreLimitInput.value = settings.scoreLimit || 0;
+}
+
+function requestRoomList() {
+  socket.emit('listRooms', {}, (res) => renderRoomList((res && res.rooms) || []));
+}
+
+function renderRoomList(rooms) {
+  if (!ui.publicRooms) return;
+  if (!rooms.length) {
+    ui.publicRooms.innerHTML = '<div class="empty-hint">Nenhuma sala pública agora. Crie a primeira!</div>';
+    return;
+  }
+  ui.publicRooms.innerHTML = rooms.map((room) => `
+    <div class="room-row">
+      <span>${escapeHtml(room.name)}<div class="meta">${room.playerCount}/${room.maxPlayers} · ${MODE_LABEL[room.mode] || room.mode} · ${LIFE_LABEL[room.lifeMode] || room.lifeMode} · ${ZOMBIE_MODE_LABEL[room.zombieSpawnMode] || ''}</div></span>
+      <button data-room="${room.id}" ${room.state !== 'lobby' ? 'disabled' : ''}>${room.state === 'lobby' ? 'ENTRAR' : 'EM ANDAMENTO'}</button>
+    </div>`).join('');
+  ui.publicRooms.querySelectorAll('button[data-room]').forEach((btn) => {
+    btn.addEventListener('click', () => joinPublicRoom(btn.dataset.room));
+  });
+}
+
+function currentCodename() {
+  return (ui.name.value || '').trim().slice(0, 16);
+}
+
+function joinPublicRoom(id) {
+  socket.emit('joinPublicRoom', { roomId: id, name: currentCodename() }, (res) => {
+    if (!res || !res.ok) { showToast(JOIN_ERROR_LABEL[res && res.reason] || 'Não foi possível entrar'); return; }
+    enterLobby(res);
+  });
+}
+
+function attemptJoinByCode() {
+  const code = (ui.roomCodeInput.value || '').trim().toUpperCase();
+  if (!code) return;
+  socket.emit('joinRoom', { code, name: currentCodename() }, (res) => {
+    if (!res || !res.ok) { showToast(JOIN_ERROR_LABEL[res && res.reason] || 'Não foi possível entrar'); return; }
+    enterLobby(res);
+  });
+}
+
+function enterLobby(res) {
+  roomId = res.roomId;
+  roomCode = res.code;
+  isHost = !!res.isHost;
+  history.replaceState(null, '', `?room=${roomCode}`);
+  setClientState('lobby');
+}
+
+function renderLobby(data) {
+  isHost = data.hostId === selfId;
+  latestRoomSettings = data.settings;
+  latestRoomVisibility = data.visibility || 'public';
+  latestRoomName = data.name || '';
+  ui.lobbyRoomCode.textContent = roomCode || data.code || '------';
+  ui.lobbyRoomName.textContent = latestRoomName || 'SALA';
+  const players = data.players || [];
+  ui.lobbyPlayers.innerHTML = players.map((p) => `
+    <div class="player-row ${p.isHost ? 'host' : ''}">
+      <span>${escapeHtml(p.name)}${p.isHost ? '<span class="tag">HOST</span>' : ''}${p.isBot ? `<span class="tag">NPC · ${escapeHtml((p.botDifficulty || '').toUpperCase())}</span>` : ''}</span>
+    </div>`).join('') || '<div class="empty-hint">Ninguém na sala ainda</div>';
+  ui.lobbyStart.style.display = isHost ? 'block' : 'none';
+  ui.lobbySettings.style.display = isHost ? 'block' : 'none';
+  ui.lobbyStatus.textContent = isHost ? '' : 'AGUARDANDO O HOST INICIAR A PARTIDA';
+}
+
+function leaveCurrentRoom() {
+  socket.emit('leaveRoom', {}, () => {
+    roomId = null; roomCode = null; isHost = false;
+    history.replaceState(null, '', location.pathname);
+    ui.roundend.style.display = 'none';
+    setClientState('landing');
+  });
+}
+
+ui.btnCreateRoom.addEventListener('click', () => {
+  editingExistingRoom = false;
+  ui.createRoomTitle.innerHTML = 'CRIAR<br><span>SALA</span>';
+  ui.roomCreateSubmit.textContent = 'CRIAR SALA';
+  Object.assign(roomConfig, DEFAULT_ROOM_CONFIG);
+  applySettingsToForm({ mode: 'coop', lifeMode: 'respawn', zombieSpawnMode: 'constant', npcDifficulty: 'standard', maxPlayers: 8, zombieBaseCount: 14, npcCount: 0, scoreLimit: 0 }, 'public', '');
+  setClientState('createRoom');
+});
+ui.roomCreateBack.addEventListener('click', () => setClientState(editingExistingRoom ? 'lobby' : 'landing'));
+ui.btnJoinByCode.addEventListener('click', attemptJoinByCode);
+ui.roomCreateSubmit.addEventListener('click', () => {
+  const payload = {
+    ...roomConfig,
+    roomName: ui.roomNameInput.value,
+    maxPlayers: Number(ui.roomMaxInput.value),
+    zombieBaseCount: Number(ui.zombieCountInput.value),
+    npcCount: Number(ui.npcCountInput.value),
+    scoreLimit: Number(ui.scoreLimitInput.value),
+  };
+  if (editingExistingRoom) {
+    socket.emit('updateRoomSettings', payload, (res) => {
+      if (!res || !res.ok) { showToast('Não foi possível salvar as configurações.'); return; }
+      showToast('CONFIGURAÇÕES ATUALIZADAS');
+      setClientState('lobby');
+    });
+  } else {
+    payload.name = currentCodename();
+    socket.emit('createRoom', payload, (res) => {
+      if (!res || !res.ok) { showToast('Não foi possível criar a sala.'); return; }
+      enterLobby(res);
+    });
+  }
+});
+ui.lobbyStart.addEventListener('click', () => {
+  socket.emit('startMatch', {}, (res) => {
+    if (res && res.ok === false) showToast('Não foi possível iniciar a partida.');
+  });
+});
+ui.lobbySettings.addEventListener('click', () => {
+  if (!latestRoomSettings) return;
+  editingExistingRoom = true;
+  ui.createRoomTitle.innerHTML = 'AJUSTAR<br><span>SALA</span>';
+  ui.roomCreateSubmit.textContent = 'SALVAR ALTERAÇÕES';
+  applySettingsToForm(latestRoomSettings, latestRoomVisibility, latestRoomName);
+  setClientState('createRoom');
+});
+ui.lobbyCopyLink.addEventListener('click', () => {
+  const link = `${location.origin}${location.pathname}?room=${roomCode}`;
+  if (navigator.clipboard) navigator.clipboard.writeText(link).then(() => showToast('LINK COPIADO')).catch(() => showToast(link));
+  else showToast(link);
+});
+ui.lobbyLeave.addEventListener('click', leaveCurrentRoom);
+ui.roundendLeave.addEventListener('click', leaveCurrentRoom);
+ui.roundendLobby.addEventListener('click', () => socket.emit('leaveToLobby'));
+
 socket.on('connect', () => { ui.connection.textContent = 'LINK ESTÁVEL'; });
-socket.on('disconnect', () => { ui.connection.textContent = 'RECONECTANDO'; });
+socket.on('disconnect', () => {
+  ui.connection.textContent = 'RECONECTANDO';
+  roomId = null; roomCode = null; isHost = false;
+  setClientState('landing');
+});
 socket.on('welcome', (data) => {
   selfId = data.id;
   world = { walls: data.walls, props: data.props, arena: data.arena };
-  matchEndsAt = data.matchEndsAt;
+  resetExploredMask(data.arena);
+  roomId = data.roomId;
+  roomCode = data.code;
+  isHost = !!data.isHost;
+});
+socket.on('lobbyUpdate', (data) => {
+  if (!data) return;
+  renderLobby(data);
+  if (clientState !== 'playing' && clientState !== 'roundEnd') setClientState('lobby');
+});
+socket.on('hostChanged', ({ hostId }) => {
+  isHost = hostId === selfId;
+  ui.lobbyStart.style.display = isHost ? 'block' : 'none';
+  ui.lobbySettings.style.display = isHost ? 'block' : 'none';
+  ui.lobbyStatus.textContent = isHost ? '' : 'AGUARDANDO O HOST INICIAR A PARTIDA';
+  ui.roundendLobby.style.display = isHost ? 'block' : 'none';
+});
+socket.on('roomListUpdate', (data) => { if (clientState === 'landing') renderRoomList((data && data.rooms) || []); });
+socket.on('matchStarted', () => {
+  ui.roundend.style.display = 'none';
+  setClientState('playing');
 });
 socket.on('snapshot', (snapshot) => {
   matchEndsAt = snapshot.matchEndsAt;
   const valid = new Set();
   for (const player of snapshot.players) { valid.add(player.id); syncEntity(player.id, 'player', player); }
   for (const zombie of snapshot.zombies) { valid.add(zombie.id); syncEntity(zombie.id, 'zombie', zombie); }
+  for (const proj of (snapshot.projectiles || [])) { valid.add(proj.id); syncEntity(proj.id, 'projectile', proj); }
+  for (const hazard of (snapshot.hazards || [])) { valid.add(hazard.id); syncEntity(hazard.id, 'hazard', hazard); }
   removeMissing(valid);
   pickupsState.length = 0;
   pickupsState.push(...(snapshot.pickups || []));
@@ -987,7 +1563,10 @@ socket.on('roundEnd', (data) => {
   ui.roundendReady.disabled = false;
   ui.roundendReady.textContent = 'PRÓXIMA PARTIDA';
   ui.roundendStatus.textContent = '';
+  ui.roundendLobby.style.display = isHost ? 'block' : 'none';
   ui.roundend.style.display = 'grid';
+  clientState = 'roundEnd';
+  deployed = false;
 });
 socket.on('readyUpdate', ({ ready, total }) => {
   ui.roundendStatus.textContent = `${ready}/${total} PRONTOS`;
@@ -1000,9 +1579,7 @@ socket.on('killfeed', (message) => {
   setTimeout(() => row.remove(), 4100);
 });
 socket.on('pickup', (message) => {
-  ui.pickup.textContent = message.label;
-  ui.pickup.classList.add('show');
-  setTimeout(() => ui.pickup.classList.remove('show'), 1600);
+  showToast(message.label);
 });
 socket.on('shot', (shot) => {
   const entity = entities.get(shot.id);
@@ -1022,28 +1599,49 @@ socket.on('grenade', (data) => {
   explosions.push({ x: data.x, y: data.y, radius: data.radius, life: 0.35, duration: 0.35 });
 });
 
-ui.deploy.addEventListener('click', () => {
-  deployed = true;
-  socket.emit('ready', ui.name.value);
-  ui.start.style.display = 'none';
-});
 ui.roundendReady.addEventListener('click', () => {
   socket.emit('readyNext');
   ui.roundendReady.disabled = true;
   ui.roundendReady.textContent = 'AGUARDANDO OUTROS AGENTES...';
 });
+
 addEventListener('mousemove', (event) => { mouseX = event.clientX; mouseY = event.clientY; });
-addEventListener('mousedown', (event) => { if (event.button === 0) { firing = true; attemptShoot(); } });
+addEventListener('mousedown', (event) => { if (event.button === 0) { firing = true; attemptFire(); } });
 addEventListener('mouseup', (event) => { if (event.button === 0) firing = false; });
+let wheelAccum = 0;
+addEventListener('wheel', (event) => {
+  if (clientState !== 'playing') return;
+  event.preventDefault();
+  wheelAccum += event.deltaY;
+  const step = 60;
+  let guard = 0;
+  while (Math.abs(wheelAccum) >= step && guard < 20) {
+    cycleWeapon(wheelAccum > 0 ? 1 : -1);
+    wheelAccum += wheelAccum > 0 ? -step : step;
+    guard += 1;
+  }
+}, { passive: false });
 addEventListener('keydown', (event) => {
   keys.add(event.code);
-  if (event.code === 'Digit1') activateWeapon('knife');
-  if (event.code === 'Digit2') activateWeapon('pistol');
-  if (event.code === 'Digit3') activateWeapon('rifle');
-  if (event.code === 'Digit4') activateWeapon('shotgun');
-  if (event.code === 'KeyG') attemptGrenade();
+  if (clientState !== 'playing') return;
+  if (event.code === 'Digit1') activateSlot('knife');
+  if (event.code === 'Digit2') activateSlot('pistol');
+  if (event.code === 'Digit3') activateSlot('rifle');
+  if (event.code === 'Digit4') activateSlot('shotgun');
+  if (event.code === 'Digit5') activateSlot('rocket');
+  if (event.code === 'Digit6') activateSlot('grenade');
+  if (event.code === 'KeyG' && availableSlots().includes('grenade')) { activateSlot('grenade', false); attemptGrenade(); }
+  if (event.code === 'Escape') leaveCurrentRoom();
 });
 addEventListener('keyup', (event) => keys.delete(event.code));
+
+// Se a URL trouxer ?room=CODIGO (link compartilhado de sala só-por-link), já
+// deixa o código pré-preenchido — leitura same-origin, nada é enviado a
+// terceiros com isso.
+const urlRoomCode = new URLSearchParams(location.search).get('room');
+if (urlRoomCode) ui.roomCodeInput.value = urlRoomCode.toUpperCase();
+
+setClientState('landing');
 
 let inputAccumulator = 0;
 let lastFrame = performance.now();

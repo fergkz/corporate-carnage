@@ -54,9 +54,14 @@ O mouse não é capturado: a mira segue o cursor livremente pela tela, como em P
 - `public/game.js`: renderização Canvas 2D, câmera que segue o jogador, controles e sincronização visual.
 - `public/index.html`: interface e HUD.
 - `public/assets/sprites/`: sprites de personagens, zumbis, armas e itens (ver créditos abaixo).
+- `public/assets/audio/`: efeitos sonoros de combate e coleta (ver créditos abaixo).
 
 O endpoint `GET /health` é usado pelo Compose antes de iniciar o túnel.
 
 ## Créditos de arte
 
 Os sprites de personagem, zumbis, armas e itens vêm do pacote **"Zombie Apocalypse Tileset"** de **Ittai Manero** (itch.io), licenciado para uso livre em projetos pessoais e comerciais. O ícone de rifle foi montado à mão na mesma paleta, já que o pacote original não incluía essa arma. Paredes, piso e mobília do escritório continuam sendo desenhados por código.
+
+## Créditos de áudio
+
+Os efeitos sonoros (tiros, faca, dano, morte, coleta, explosão, clique de arma sem munição) vêm dos pacotes **"Sci-Fi Sounds"**, **"RPG Audio"** e **"Impact Sounds"** de **Kenney** (kenney.nl), licenciados em **CC0** (domínio público, uso livre em projetos pessoais e comerciais, crédito bem-vindo mas não obrigatório).

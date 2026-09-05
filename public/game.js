@@ -248,6 +248,7 @@ const ui = {
   scoreboard: document.querySelector('#scoreboard'), connection: document.querySelector('#connection'), weapon: document.querySelector('#weapon-name'),
   slots: [...document.querySelectorAll('#weapon-slots .slot')], announcement: document.querySelector('#announcement'), damage: document.querySelector('#damage'),
   killfeed: document.querySelector('#killfeed'), ammo: document.querySelector('#ammo'), pickup: document.querySelector('#pickup-toast'),
+  hud: document.querySelector('#hud'), spectatorBanner: document.querySelector('#spectator-banner'),
   shieldBar: document.querySelector('#shield-bar'), shieldFill: document.querySelector('#shield-fill'), grenadeCount: document.querySelector('#grenade-count'),
   roundend: document.querySelector('#roundend'), roundendScoreboard: document.querySelector('#roundend-scoreboard'),
   roundendReady: document.querySelector('#roundend-ready'), roundendStatus: document.querySelector('#roundend-status'),
@@ -265,6 +266,11 @@ let selfId = null;
 let deployed = false;
 let currentWeapon = 'knife';
 let selfState = null;
+// Modo espectador (TODO-024): só se aplica em Battle Royale, onde a morte é
+// definitiva até o fim da rodada — em respawn o jogador volta sozinho, não
+// precisa de câmera emprestada. `null` = assistindo a si mesmo (padrão).
+let spectateTargetId = null;
+let livingOthersCache = [];
 let firing = false;
 let lastClientShot = 0;
 let lastHp = 100;
@@ -1327,7 +1333,9 @@ function drawFogOfWar(radiusWorldUnits, angle) {
 }
 
 function render(now, dt) {
-  const self = entities.get(selfId);
+  // Modo espectador (Battle Royale, TODO-024): câmera segue `spectateTargetId`
+  // em vez do próprio jogador morto, que ficaria parado pra sempre.
+  const self = entities.get(spectateTargetId || selfId);
   const camX = self ? self.x : 0;
   const camY = self ? self.y : 0;
   const angle = aimAngle();
@@ -1548,6 +1556,27 @@ function updateHud(players) {
     ui.shieldFill.style.width = `${shieldPct}%`;
     ui.shieldBar.classList.toggle('active', shieldPct > 0);
     ui.grenadeCount.textContent = String(self.grenades || 0);
+
+    const isBattleRoyale = latestRoomSettings && latestRoomSettings.lifeMode === 'battleRoyale';
+    livingOthersCache = players.filter((p) => p.alive && p.id !== selfId);
+    if (isBattleRoyale && !self.alive) {
+      const stillValid = spectateTargetId && livingOthersCache.some((p) => p.id === spectateTargetId);
+      if (!stillValid) {
+        const humanFirst = livingOthersCache.find((p) => !p.isBot) || livingOthersCache[0];
+        spectateTargetId = humanFirst ? humanFirst.id : null;
+      }
+    } else {
+      spectateTargetId = null;
+    }
+    const spectating = !!spectateTargetId;
+    ui.hud.classList.toggle('spectating', spectating);
+    if (ui.spectatorBanner) {
+      ui.spectatorBanner.style.display = spectating ? 'block' : 'none';
+      if (spectating) {
+        const target = players.find((p) => p.id === spectateTargetId);
+        ui.spectatorBanner.textContent = target ? `ASSISTINDO: ${target.name} · ←/→ TROCAR` : 'AGUARDANDO FIM DA PARTIDA';
+      }
+    }
   }
   ui.timer.textContent = `${stageInfo.index + 1}/${stageInfo.count}`;
   ui.objective.textContent = stageInfo.objectiveLabel;
@@ -1933,6 +1962,12 @@ addEventListener('keydown', (event) => {
   if (event.code === 'Digit6') activateSlot('grenade');
   if (event.code === 'KeyG' && availableSlots().includes('grenade')) { activateSlot('grenade', false); attemptGrenade(); }
   if (event.code === 'KeyE' && deployed) { socket.emit('toggleDoor'); socket.emit('activateSwitch'); }
+  if ((event.code === 'ArrowLeft' || event.code === 'ArrowRight') && spectateTargetId && livingOthersCache.length > 1) {
+    const idx = livingOthersCache.findIndex((p) => p.id === spectateTargetId);
+    const dir = event.code === 'ArrowRight' ? 1 : -1;
+    const next = livingOthersCache[(idx + dir + livingOthersCache.length) % livingOthersCache.length];
+    spectateTargetId = next.id;
+  }
   if (event.code === 'Escape') leaveCurrentRoom();
 });
 addEventListener('keyup', (event) => keys.delete(event.code));

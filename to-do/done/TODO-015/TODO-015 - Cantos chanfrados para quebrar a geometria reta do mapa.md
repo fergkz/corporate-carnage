@@ -1,6 +1,6 @@
 # TODO-015 — Cantos chanfrados para quebrar a geometria reta do mapa
 
-**Status**: pendente
+**Status**: concluído
 
 **Pedido original**: no brainstorm de melhorias pós-playtest, o assistente sugeriu "quebrar a monotonia dos ângulos retos — hoje quase todo corredor/sala é um retângulo alinhado a eixo; cantos chanfrados criam ângulos de tiro diferentes e visual menos grid". Fernando pediu para implementar tudo o que foi sugerido no brainstorm.
 

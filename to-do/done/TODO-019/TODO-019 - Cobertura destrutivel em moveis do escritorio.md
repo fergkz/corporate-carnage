@@ -1,6 +1,6 @@
 # TODO-019 — Cobertura destrutível em móveis do escritório
 
-**Status**: pendente
+**Status**: concluído
 
 **Pedido original**: no brainstorm de melhorias pós-playtest, o assistente sugeriu "mesas/plantas que podem ser derrubadas/quebradas por tiros de escopeta/explosão, criando variação dinâmica de linha de visão dentro da mesma sala". Fernando pediu para implementar tudo o que foi sugerido no brainstorm.
 

@@ -1,6 +1,6 @@
 # TODO-017 — Mapa alternativo de garagem/estacionamento
 
-**Status**: pendente
+**Status**: concluído
 
 **Pedido original**: no brainstorm de melhorias pós-playtest, o assistente sugeriu "um mapa alternativo pra variar o evento (ex. garagem/estacionamento, pilares em vez de cubículos), mesmas regras, cenário diferente, bom pra não cansar visualmente num dia inteiro de partidas". Fernando pediu para implementar tudo o que foi sugerido no brainstorm.
 

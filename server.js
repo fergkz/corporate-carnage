@@ -469,6 +469,7 @@ function buildRoom(hostSocket, config, hostName) {
     pickupSpawnPool: STAGES[0].pickupSpawnPool,
     spawnPoints: STAGES[0].spawnPoints,
     stageProgress: null,
+    finalWaveAnnounced: false,
   };
   seedPickups(room);
   rooms.set(room.id, room);
@@ -597,6 +598,7 @@ function applyStage(room, stageIndex, { preservePlayers }) {
     for (let i = 0; i < room.config.zombieBaseCount; i += 1) spawnZombie(room);
     room.stageProgress = { type: 'eliminate', target: objective.target, count: 0 };
   }
+  room.finalWaveAnnounced = false;
 
   room.evolutionState = {
     nextSpawnAt: Date.now() + EVOLUTION_INTERVAL_MS,
@@ -735,9 +737,34 @@ function killPlayer(room, target, attacker) {
   }
 }
 
+// Fração de conclusão do objetivo do estágio atual (0-1). Substitui o antigo
+// "tempo restante de partida" (removido junto com o cronômetro fixo) como
+// medida de "quão perto do fim" — o jogo agora avança por objetivo cumprido,
+// não por relógio, então a escalada de tensão usa a mesma régua.
+function stageProgressFraction(room) {
+  const progress = room.stageProgress;
+  if (!progress || progress.type !== 'eliminate' || !progress.target) return 0;
+  return Math.min(1, progress.count / progress.target);
+}
+
 function scheduleZombieRespawn(room) {
   if (room.config.zombieSpawnMode === 'fixed' || room.config.zombieSpawnMode === 'evolution') return;
-  const delay = 5000 + Math.random() * 10000;
+  const fraction = stageProgressFraction(room);
+  // Fase 1 (0-40% do objetivo): ritmo normal, foco em explorar/coletar.
+  // Fase 2 (40-80%): repõe mais rápido, pressão crescente.
+  // Fase 3 (80%+): onda final — repõe bem mais rápido, com aviso único.
+  let delay;
+  if (fraction >= 0.8) {
+    delay = 1500 + Math.random() * 2500;
+    if (!room.finalWaveAnnounced) {
+      room.finalWaveAnnounced = true;
+      io.to(room.id).emit('announcement', { title: 'ONDA FINAL', subtitle: 'Últimos infectados chegando' });
+    }
+  } else if (fraction >= 0.4) {
+    delay = 3500 + Math.random() * 5500;
+  } else {
+    delay = 5000 + Math.random() * 10000;
+  }
   setTimeout(() => {
     if (!roomAlive(room) || room.state !== 'playing') return;
     spawnZombie(room);

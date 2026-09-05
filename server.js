@@ -16,6 +16,13 @@ const TICK_RATE = 20;
 // Pontuação-limite automática do modo versus (não há mais duração configurável
 // de partida — o fim agora vem dos objetivos da campanha, ver STAGES abaixo).
 const VERSUS_SCORE_LIMIT = 30;
+// Sequência fixa de presets pra salas com rotação automática ativada — varia
+// modo/estilo de vida a cada nova rodada sem o host precisar reconfigurar.
+const AUTO_ROTATE_PRESETS = [
+  { mode: 'coop', lifeMode: 'respawn' },
+  { mode: 'versus', lifeMode: 'respawn' },
+  { mode: 'versus', lifeMode: 'battleRoyale' },
+];
 const PLAYER_RADIUS = 0.46;
 
 // Uma campanha é uma sequência de estágios. Cada estágio carrega seu próprio
@@ -451,6 +458,7 @@ function buildRoom(hostSocket, config, hostName) {
       npcCount: Math.max(0, maxPlayers - 1),
       npcDifficulty: preset.npcDifficulty,
       scoreLimit: mode === 'versus' ? VERSUS_SCORE_LIMIT : 0,
+      autoRotate: config.autoRotate === true,
     },
     players: new Map(),
     zombies: new Map(),
@@ -478,6 +486,7 @@ function buildRoom(hostSocket, config, hostName) {
     finalWaveAnnounced: false,
     alphaZombieId: null,
     alphaSpawnAt: Date.now() + ALPHA_SPAWN_INTERVAL_MS,
+    roundIndex: 0,
   };
   seedPickups(room);
   rooms.set(room.id, room);
@@ -577,6 +586,17 @@ function describeObjective(progress) {
 // "de verdade" entre estágios (mantém arma/munição/vida/escudo/granadas/
 // pontuação, só reposiciona); `preservePlayers: false` é início de partida
 // (reset completo, igual ao antigo `resetMatch`).
+// Normaliza modo/estilo-de-vida/scoreLimit — usado tanto por
+// `updateRoomSettings` (host ajustando manualmente) quanto pela rotação
+// automática entre rodadas, pra não duplicar a lógica nos dois lugares.
+function applyModeAndLifeMode(room, mode, lifeMode) {
+  if (mode === 'coop' || mode === 'versus') {
+    room.config.mode = mode;
+    room.config.scoreLimit = mode === 'versus' ? VERSUS_SCORE_LIMIT : 0;
+  }
+  if (lifeMode === 'respawn' || lifeMode === 'battleRoyale') room.config.lifeMode = lifeMode;
+}
+
 function applyStage(room, stageIndex, { preservePlayers }) {
   const stage = STAGES[stageIndex];
   room.stageIndex = stageIndex;
@@ -1672,11 +1692,8 @@ io.on('connection', (socket) => {
     if (room.hostId !== socket.id) return safeAck(ack, { ok: false, reason: 'not_host' });
     if (room.state !== 'lobby') return safeAck(ack, { ok: false, reason: 'not_lobby' });
     if (data.visibility === 'public' || data.visibility === 'private') room.visibility = data.visibility;
-    if (data.mode === 'coop' || data.mode === 'versus') {
-      room.config.mode = data.mode;
-      room.config.scoreLimit = data.mode === 'versus' ? VERSUS_SCORE_LIMIT : 0;
-    }
-    if (data.lifeMode === 'respawn' || data.lifeMode === 'battleRoyale') room.config.lifeMode = data.lifeMode;
+    applyModeAndLifeMode(room, data.mode, data.lifeMode);
+    if (typeof data.autoRotate === 'boolean') room.config.autoRotate = data.autoRotate;
     if (Object.prototype.hasOwnProperty.call(DIFFICULTY_PRESETS, data.difficulty)) {
       const preset = DIFFICULTY_PRESETS[data.difficulty];
       room.config.difficulty = data.difficulty;
@@ -1731,7 +1748,14 @@ io.on('connection', (socket) => {
     const humans = [...room.players.values()].filter((p) => !p.isBot);
     const confirmed = humans.filter((p) => p.wantsNextRound).length;
     io.to(room.id).emit('readyUpdate', { ready: confirmed, total: humans.length });
-    if (humans.length > 0 && confirmed === humans.length) startMatch(room);
+    if (humans.length > 0 && confirmed === humans.length) {
+      if (room.config.autoRotate) {
+        room.roundIndex += 1;
+        const next = AUTO_ROTATE_PRESETS[room.roundIndex % AUTO_ROTATE_PRESETS.length];
+        applyModeAndLifeMode(room, next.mode, next.lifeMode);
+      }
+      startMatch(room);
+    }
   });
 
   socket.on('weapon', (weapon) => {

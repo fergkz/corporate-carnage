@@ -182,10 +182,35 @@ let height = innerHeight;
 const rememberedCanvas = document.createElement('canvas');
 const rememberedCtx = rememberedCanvas.getContext('2d');
 
+// Modo de qualidade gráfica: 'high' (padrão) ou 'low', pra rodar melhor em
+// hardware fraco/celular. Alterna: resolução interna (dpr), recomposição da
+// camada "lembrada" do fog-of-war (throttle em vez de todo frame) e alguns
+// gradientes decorativos por entidade (zumbis, projétil de ácido, gás),
+// trocados por preenchimento sólido mais barato. O fog-of-war principal
+// (`drawFogOfWar`) não é afetado — é mecânica de jogo, não decoração.
+let lowQuality = localStorage.getItem('cc_quality') === 'low';
+let rememberedFrameCounter = 0;
+function setLowQuality(low) {
+  lowQuality = low;
+  localStorage.setItem('cc_quality', low ? 'low' : 'high');
+  const btn = document.querySelector('#quality-toggle');
+  if (btn) btn.textContent = low ? 'GRÁFICOS: BAIXO' : 'GRÁFICOS: ALTO';
+  resize();
+}
+// Substitui um `createRadialGradient` por um preenchimento sólido mais barato
+// quando `lowQuality` está ativo — mesma área/cor, sem o custo do gradiente.
+function glowFill(ctx2d, x, y, radius, rgb, alpha) {
+  if (lowQuality) return `rgba(${rgb},${(alpha * 0.5).toFixed(3)})`;
+  const grad = ctx2d.createRadialGradient(x, y, 0, x, y, radius);
+  grad.addColorStop(0, `rgba(${rgb},${alpha})`);
+  grad.addColorStop(1, `rgba(${rgb},0)`);
+  return grad;
+}
+
 function resize() {
   width = innerWidth;
   height = innerHeight;
-  const dpr = Math.min(devicePixelRatio || 1, 2);
+  const dpr = lowQuality ? 1 : Math.min(devicePixelRatio || 1, 2);
   canvas.width = Math.round(width * dpr);
   canvas.height = Math.round(height * dpr);
   canvas.style.width = `${width}px`;
@@ -914,20 +939,14 @@ function drawZombies(now) {
       const armed = entity.fuseAt > 0;
       const pulse = 0.5 + 0.5 * Math.sin(now / (armed ? 55 : 220));
       const glowRadius = armed ? 0.95 : 0.75;
-      const glow = ctx.createRadialGradient(entity.x, entity.y, 0, entity.x, entity.y, glowRadius);
-      glow.addColorStop(0, `rgba(255,60,40,${(armed ? 0.75 : 0.45) * pulse})`);
-      glow.addColorStop(1, 'rgba(255,60,40,0)');
-      ctx.fillStyle = glow;
+      ctx.fillStyle = glowFill(ctx, entity.x, entity.y, glowRadius, '255,60,40', (armed ? 0.75 : 0.45) * pulse);
       ctx.beginPath(); ctx.arc(entity.x, entity.y, glowRadius, 0, Math.PI * 2); ctx.fill();
     }
     const glowColor = ZOMBIE_GLOW[entity.typeId];
     if (glowColor) {
       const pulse = 0.5 + 0.5 * Math.sin(now / 260);
       const glowRadius = 0.7 * shadowScale;
-      const glow = ctx.createRadialGradient(entity.x, entity.y, 0, entity.x, entity.y, glowRadius);
-      glow.addColorStop(0, `rgba(${glowColor},${0.4 * pulse})`);
-      glow.addColorStop(1, `rgba(${glowColor},0)`);
-      ctx.fillStyle = glow;
+      ctx.fillStyle = glowFill(ctx, entity.x, entity.y, glowRadius, glowColor, 0.4 * pulse);
       ctx.beginPath(); ctx.arc(entity.x, entity.y, glowRadius, 0, Math.PI * 2); ctx.fill();
     }
     if (entity.typeId === 'stretcher' && entity.stretchPhase && entity.stretchPhase !== 'idle' && entity.stretchPhase !== 'recover') drawStretchTelegraph(entity);
@@ -947,10 +966,7 @@ function drawAcidProjectiles() {
     if (entity.kind !== 'projectile') continue;
     if (entity.projectileKind === 'rocket') continue; // desenhado em drawRockets()
     ctx.save();
-    const glow = ctx.createRadialGradient(entity.x, entity.y, 0, entity.x, entity.y, 0.22);
-    glow.addColorStop(0, 'rgba(150,230,60,0.85)');
-    glow.addColorStop(1, 'rgba(150,230,60,0)');
-    ctx.fillStyle = glow;
+    ctx.fillStyle = glowFill(ctx, entity.x, entity.y, 0.22, '150,230,60', 0.85);
     ctx.beginPath(); ctx.arc(entity.x, entity.y, 0.22, 0, Math.PI * 2); ctx.fill();
     if (spriteReady(sprites.acidProjectile)) {
       const aspect = sprites.acidProjectile.naturalHeight / sprites.acidProjectile.naturalWidth;
@@ -965,10 +981,7 @@ function drawGasHazards(now) {
   for (const [, entity] of entities) {
     if (entity.kind !== 'hazard') continue;
     const pulse = 0.5 + 0.5 * Math.sin(now / 300);
-    const glow = ctx.createRadialGradient(entity.x, entity.y, 0, entity.x, entity.y, entity.radius || 2);
-    glow.addColorStop(0, `rgba(120,200,70,${0.28 * pulse})`);
-    glow.addColorStop(1, 'rgba(120,200,70,0)');
-    ctx.fillStyle = glow;
+    ctx.fillStyle = glowFill(ctx, entity.x, entity.y, entity.radius || 2, '120,200,70', 0.28 * pulse);
     ctx.beginPath(); ctx.arc(entity.x, entity.y, entity.radius || 2, 0, Math.PI * 2); ctx.fill();
   }
 }
@@ -1223,9 +1236,15 @@ function render(now, dt) {
   ctx.fillStyle = '#05090c';
   ctx.fillRect(0, 0, width, height);
 
+  rememberedFrameCounter += 1;
   if (deployed && exploredMask) {
-    burnExploredMask(camX, camY, visionRadius);
-    renderRememberedLayer(camX, camY, world.arena);
+    // No modo baixo, a camada "lembrada" só é recomposta a cada 4 frames —
+    // ela representa área já visitada, então uma atualização discretizada
+    // não é perceptível, e isso evita o redesenho mais caro do modo gráfico.
+    if (!lowQuality || rememberedFrameCounter % 4 === 0) {
+      burnExploredMask(camX, camY, visionRadius);
+      renderRememberedLayer(camX, camY, world.arena);
+    }
     ctx.drawImage(rememberedCanvas, 0, 0, width, height);
   }
 
@@ -1822,4 +1841,9 @@ const muteToggle = document.querySelector('#mute-toggle');
 if (muteToggle) {
   setSfxMuted(sfxMuted);
   muteToggle.addEventListener('click', () => setSfxMuted(!sfxMuted));
+}
+const qualityToggle = document.querySelector('#quality-toggle');
+if (qualityToggle) {
+  setLowQuality(lowQuality);
+  qualityToggle.addEventListener('click', () => setLowQuality(!lowQuality));
 }

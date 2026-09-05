@@ -1,6 +1,6 @@
 # TODO-007 — Comunicar limite de pontos do modo Versus na criação e no HUD
 
-**Status**: pendente
+**Status**: concluído
 
 **Pedido original**: durante um playtest guiado, o assistente relatou a Fernando: "modo VERSUS tem um limite oculto de 30 pontos que encerra a partida antes do tempo configurado, sem aviso nenhum na UI — configurei uma sala de 10 minutos e ela terminou em ~1min40s porque um bot bateu 30 pontos". Fernando pediu para transformar esse achado (e os outros do mesmo relatório) em itens de backlog.
 

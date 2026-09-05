@@ -173,6 +173,7 @@ const ui = {
   lobbyLeave: document.querySelector('#lobby-leave'),
   health: document.querySelector('#health-number'), healthFill: document.querySelector('#health-fill'), timer: document.querySelector('#timer span'),
   objective: document.querySelector('#objective span'),
+  scoreLimit: document.querySelector('#score-limit'), scoreLimitValue: document.querySelector('#score-limit span'),
   scoreboard: document.querySelector('#scoreboard'), connection: document.querySelector('#connection'), weapon: document.querySelector('#weapon-name'),
   slots: [...document.querySelectorAll('#weapon-slots .slot')], announcement: document.querySelector('#announcement'), damage: document.querySelector('#damage'),
   killfeed: document.querySelector('#killfeed'), ammo: document.querySelector('#ammo'), pickup: document.querySelector('#pickup-toast'),
@@ -1367,6 +1368,11 @@ function updateHud(players) {
   ui.objective.textContent = stageInfo.objectiveLabel;
   const sorted = [...players].sort((a, b) => b.score - a.score);
   ui.scoreboard.innerHTML = `<div class="score-head"><span>AGENTE</span><span>PTS</span><span>K</span></div>${sorted.map((p) => `<div class="score-row ${p.id === selfId ? 'self' : ''}"><span>${escapeHtml(p.name)}${p.isBot ? ' <small style="opacity:.6">NPC</small>' : ''}</span><b>${p.score}</b><span>${p.kills}</span></div>`).join('')}`;
+  const scoreLimit = latestRoomSettings && latestRoomSettings.mode === 'versus' ? latestRoomSettings.scoreLimit : 0;
+  if (ui.scoreLimit) {
+    ui.scoreLimit.style.display = scoreLimit > 0 ? 'block' : 'none';
+    if (scoreLimit > 0) ui.scoreLimitValue.textContent = `${sorted[0] ? sorted[0].score : 0}/${scoreLimit}`;
+  }
 }
 
 // --- Sessão: lobby, criação/entrada em salas ---
@@ -1394,6 +1400,7 @@ function setupOptGroup(selector, axis) {
       container.querySelectorAll('.opt').forEach((el) => el.classList.remove('active'));
       opt.classList.add('active');
       roomConfig[axis] = opt.dataset.value;
+      if (axis === 'mode') updateVersusScoreHint();
     });
   });
 }
@@ -1409,6 +1416,14 @@ function setOptGroupValue(selector, value) {
   container.querySelectorAll('.opt').forEach((el) => el.classList.toggle('active', el.dataset.value === value));
 }
 
+// Versus tem um limite de pontos (VERSUS_SCORE_LIMIT no servidor) que encerra
+// a campanha antes de cumprir o objetivo do estágio — avisa isso já na tela
+// de criação.
+function updateVersusScoreHint() {
+  const hint = document.querySelector('#versus-score-hint');
+  if (hint) hint.style.display = roomConfig.mode === 'versus' ? 'block' : 'none';
+}
+
 // Preenche o formulário de criar-sala com uma config existente — reaproveitado
 // tanto para resetar aos padrões quanto para abrir "AJUSTAR CONFIGURAÇÕES".
 function applySettingsToForm(settings, visibility) {
@@ -1422,6 +1437,7 @@ function applySettingsToForm(settings, visibility) {
   setOptGroupValue('#opt-players', roomConfig.players);
   setOptGroupValue('#opt-lifemode', roomConfig.lifeMode);
   setOptGroupValue('#opt-difficulty', roomConfig.difficulty);
+  updateVersusScoreHint();
 }
 
 function requestRoomList() {

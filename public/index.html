@@ -95,6 +95,9 @@
       .player-row .tag { color:#f3a229; font-size:9px; letter-spacing:.1em; margin-left:6px; }
       .room-row button { height:32px; padding:0 12px; font-size:10px; }
       .empty-hint { color:#5f6d72; font-size:11px; padding:10px 0; text-align:center; }
+      .form-row .hint { color:#8d9a9f; font-size:11px; margin:6px 0 0; line-height:1.4; }
+      #score-limit { display:none; }
+      #score-limit small { display:block; color:#8d9a9f; font-size:9px; letter-spacing:.12em; }
       .room-code-display { font:700 22px 'Barlow Condensed'; letter-spacing:.2em; color:var(--amber); }
       @media(max-width:700px){#scoreboard{display:none}.start-card{padding:30px 24px}#hud{padding:16px}#weapon-slots{display:none}}
     </style>
@@ -104,7 +107,7 @@
     <div id="vignette" class="overlay"></div><div id="damage" class="overlay"></div>
     <div id="hud" class="overlay">
       <div id="brand"><strong>CORPORATE CARNAGE</strong>CONTENÇÃO EXECUTIVA</div>
-      <div id="timer"><small>ESTÁGIO</small><span>1/1</span></div><div id="connection">CONECTANDO</div>
+      <div id="timer"><small>ESTÁGIO</small><span>1/1</span></div><div id="score-limit"><small>PONTOS PARA VENCER</small><span>0/30</span></div><div id="connection">CONECTANDO</div>
       <div id="health"><div class="label">INTEGRIDADE</div><div class="bar"><div id="health-fill"></div></div><div id="health-number">100</div><div class="bar" id="shield-bar"><div id="shield-fill"></div></div></div>
       <div id="weapon"><div class="label">EQUIPAMENTO ATIVO</div><div id="weapon-name">FACA TÁTICA</div><div id="ammo">∞</div><div id="weapon-slots"><div class="slot active">1 FACA</div><div class="slot locked">2 PISTOLA</div><div class="slot locked">3 RIFLE</div><div class="slot locked">4 ESCOPETA</div><div class="slot locked">5 MÍSSIL</div><div class="slot locked">6 GRANADA</div></div><div id="grenades">GRANADAS <b id="grenade-count">0</b></div></div>
       <div id="objective"><div class="label">OBJETIVO</div><span></span></div>
@@ -132,7 +135,7 @@
       <div class="start-card wide">
         <h1 id="createRoom-title">CRIAR<br><span>SALA</span></h1>
         <div class="form-row"><label>VISIBILIDADE</label><div class="opt-group" id="opt-visibility" data-axis="visibility"><div class="opt active" data-value="public">PÚBLICA</div><div class="opt" data-value="private">SÓ POR LINK</div></div></div>
-        <div class="form-row"><label>MODO</label><div class="opt-group" id="opt-mode" data-axis="mode"><div class="opt active" data-value="coop">COOP (vs zumbis)</div><div class="opt" data-value="versus">VERSUS (PvP)</div></div></div>
+        <div class="form-row"><label>MODO</label><div class="opt-group" id="opt-mode" data-axis="mode"><div class="opt active" data-value="coop">COOP (vs zumbis)</div><div class="opt" data-value="versus">VERSUS (PvP)</div></div><p class="hint" id="versus-score-hint" style="display:none">Versus também termina se alguém alcançar 30 pontos, mesmo antes do tempo configurado.</p></div>
         <div class="form-row"><label>JOGADORES</label><div class="opt-group" id="opt-players" data-axis="players"><div class="opt" data-value="2">2</div><div class="opt active" data-value="4">4</div><div class="opt" data-value="6">6</div><div class="opt" data-value="8">8</div></div></div>
         <div class="form-row"><label>ESTILO DE VIDA</label><div class="opt-group" id="opt-lifemode" data-axis="lifeMode"><div class="opt active" data-value="respawn">RESPAWN</div><div class="opt" data-value="battleRoyale">BATTLE ROYALE</div></div></div>
         <div class="form-row"><label>DIFICULDADE</label><div class="opt-group" id="opt-difficulty" data-axis="difficulty"><div class="opt" data-value="easy">FÁCIL</div><div class="opt active" data-value="normal">NORMAL</div><div class="opt" data-value="hard">DIFÍCIL</div><div class="opt" data-value="insane">INSANO</div></div></div>

@@ -127,6 +127,14 @@ const STAGES = [
       [-4, -11], [4, 11], [-11, 4], [16, -3], [-16, 3], [11, 4],
     ],
     spawnPoints: [[-17, -16], [17, 16], [-18.5, 16], [18.5, -16], [7, 18], [-7, -18]],
+    // Portas trancáveis (TODO-020) — hoje as duas "portas" de Servidores/Copa
+    // são só uma lacuna fixa em `walls`; aqui viram objeto de verdade, com
+    // colisão condicional a `locked` (ver `collides()`), interagível via
+    // tecla `E` por proximidade.
+    doors: [
+      { id: 'porta-servidores', x: -2.8, y: 9.8, w: 0.5, h: 6.4, locked: false },
+      { id: 'porta-copa', x: 8, y: -2.9, w: 6, h: 0.5, locked: false },
+    ],
     // Alvo escala com o tanto de zumbi configurado pra sala, pra continuar
     // fazendo sentido em salas com zombieBaseCount bem diferente de 14.
     objective: (room) => ({ type: 'eliminate', target: Math.max(10, room.config.zombieBaseCount + 6) }),
@@ -333,9 +341,13 @@ function generateRoomCode() {
 function collides(room, x, y, radius = PLAYER_RADIUS) {
   const arena = room.arena;
   if (x < -arena + radius || x > arena - radius || y < -arena + radius || y > arena - radius) return true;
-  return room.walls.some((wall) =>
+  if (room.walls.some((wall) =>
     x > wall.x - wall.w / 2 - radius && x < wall.x + wall.w / 2 + radius &&
     y > wall.y - wall.h / 2 - radius && y < wall.y + wall.h / 2 + radius
+  )) return true;
+  return (room.doors || []).some((door) => door.locked &&
+    x > door.x - door.w / 2 - radius && x < door.x + door.w / 2 + radius &&
+    y > door.y - door.h / 2 - radius && y < door.y + door.h / 2 + radius
   );
 }
 
@@ -533,6 +545,7 @@ function buildRoom(hostSocket, config, hostName) {
     stageIndex: 0,
     walls: initialStages[0].walls,
     props: initialStages[0].props,
+    doors: initialStages[0].doors || [],
     arena: initialStages[0].arena,
     pickupSpawnPool: initialStages[0].pickupSpawnPool,
     spawnPoints: initialStages[0].spawnPoints,
@@ -560,7 +573,7 @@ function joinRoomSocket(socket, room, name) {
   room.players.set(socket.id, player);
   room.emptySince = null;
   socket.emit('welcome', {
-    id: socket.id, walls: room.walls, props: room.props, arena: room.arena, roomId: room.id, code: room.code,
+    id: socket.id, walls: room.walls, props: room.props, doors: room.doors, arena: room.arena, roomId: room.id, code: room.code,
     isHost: room.hostId === socket.id, settings: room.config,
   });
   io.to(room.id).emit('lobbyUpdate', lobbyPayload(room));
@@ -659,6 +672,7 @@ function applyStage(room, stageIndex, { preservePlayers }) {
   // toda sala futura que use este estágio (ver damageDestructiblesNear).
   room.walls = stage.walls.map((wall) => ({ ...wall }));
   room.props = stage.props.map((prop) => ({ ...prop }));
+  room.doors = (stage.doors || []).map((door) => ({ ...door }));
   room.arena = stage.arena;
   room.pickupSpawnPool = stage.pickupSpawnPool;
   room.spawnPoints = stage.spawnPoints;
@@ -706,7 +720,7 @@ function applyStage(room, stageIndex, { preservePlayers }) {
   }
 
   io.to(room.id).emit('stageChange', {
-    walls: room.walls, props: room.props, arena: room.arena,
+    walls: room.walls, props: room.props, doors: room.doors, arena: room.arena,
     stageIndex, stageCount: stagesFor(room).length, stageName: stage.name,
   });
   io.to(room.id).emit('announcement', { title: stage.name.toUpperCase(), subtitle: describeObjective(room.stageProgress) });
@@ -1814,6 +1828,24 @@ io.on('connection', (socket) => {
     player.input.x = clamp(Number(data.x) || 0, -1, 1);
     player.input.y = clamp(Number(data.y) || 0, -1, 1);
     if (Number.isFinite(data.angle)) player.angle = data.angle;
+  });
+
+  socket.on('toggleDoor', () => {
+    const room = getRoom(socket);
+    if (!room) return;
+    const player = room.players.get(socket.id);
+    if (!player || !player.alive || !player.ready) return;
+    // Autoridade do servidor: acha a porta mais próxima por conta própria,
+    // não confia em id vindo do cliente — mesmo padrão do resto do jogo.
+    let nearest = null;
+    let nearestDist = Infinity;
+    for (const door of room.doors || []) {
+      const dist = Math.hypot(player.x - door.x, player.y - door.y);
+      if (dist < nearestDist) { nearestDist = dist; nearest = door; }
+    }
+    if (!nearest || nearestDist > 2.2) return;
+    nearest.locked = !nearest.locked;
+    io.to(room.id).emit('doorUpdate', { id: nearest.id, locked: nearest.locked });
   });
 
   socket.on('fire', (data) => {

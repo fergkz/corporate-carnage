@@ -1,6 +1,6 @@
 # TODO-020 — Portas trancáveis e fecháveis nas salas internas
 
-**Status**: pendente
+**Status**: concluído
 
 **Pedido original**: no brainstorm de melhorias pós-playtest, o assistente sugeriu "portas trancáveis/fecháveis — já existe o conceito de porta aberta fixa (Servidores/Copa); torná-la interativa cria tática real (trancar zumbi fora, ou rival fora)". Fernando pediu para implementar tudo o que foi sugerido no brainstorm.
 

@@ -699,6 +699,39 @@ function drawWalls() {
   }
 }
 
+// Cantos chanfrados — só decoração, sem mexer em colisão (opção mais barata
+// da proposta): uma sombra triangular sobre a quina de dentro de alguns
+// cantos de alto tráfego, sugerindo um corte de 45° sem exigir colisão
+// poligonal (que não existe hoje — `collides()` só sabe AABB). Coordenadas
+// fixas nos cantos do bloco central da recepção e nas duas entradas em L
+// (Servidores/Copa), escolhidas por serem os pontos mais percorridos do mapa.
+const CHAMFER_CORNERS = [
+  { x: -3.3, y: -2.6, angle: Math.PI * 1.25 }, // recepção, canto NO
+  { x: 3.3, y: -2.6, angle: Math.PI * 1.75 }, // recepção, canto NE
+  { x: -3.3, y: 2.6, angle: Math.PI * 0.75 }, // recepção, canto SO
+  { x: 3.3, y: 2.6, angle: Math.PI * 0.25 }, // recepção, canto SE
+  { x: -8.8, y: 6.6, angle: Math.PI * 0.25 }, // entrada da Sala de Servidores
+  { x: 10.8, y: -8.5, angle: Math.PI * 1.25 }, // entrada da Copa
+];
+function drawChamferShadows() {
+  for (const corner of CHAMFER_CORNERS) {
+    ctx.save();
+    ctx.translate(corner.x, corner.y);
+    ctx.rotate(corner.angle);
+    const grad = ctx.createLinearGradient(0, 0, 0.9, 0.9);
+    grad.addColorStop(0, 'rgba(0,0,0,0.35)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0.9, 0);
+    ctx.lineTo(0, 0.9);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
 function drawProps() {
   for (const prop of world.props) drawProp(prop);
 }
@@ -1261,6 +1294,7 @@ function render(now, dt) {
   drawBloodStains(now);
   drawGasHazards(now);
   drawWalls();
+  drawChamferShadows();
   drawProps();
   drawPickups(now);
   drawCorpses(now);

@@ -633,6 +633,23 @@ function drawDynamicProp(prop) {
     case 'sign':
       paintSprite(bakeSprite(`sign-${prop.text}`, 2.6, 0.6, (g) => drawSignSprite(g, prop.text)));
       break;
+    case 'pillar': {
+      // Pilar de concreto do mapa de garagem — mesma paleta das paredes, só
+      // um pouco mais claro no topo pra sugerir volume/iluminação pontual.
+      const grad = ctx.createLinearGradient(-0.8, -0.8, 0.8, 0.8);
+      grad.addColorStop(0, '#4a5257');
+      grad.addColorStop(1, '#2c3236');
+      ctx.fillStyle = grad;
+      ctx.fillRect(-0.8, -0.8, 1.6, 1.6);
+      ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+      ctx.lineWidth = 0.05;
+      ctx.strokeRect(-0.8, -0.8, 1.6, 1.6);
+      ctx.fillStyle = 'rgba(255,200,90,0.18)';
+      ctx.beginPath();
+      ctx.arc(0, 0, 2.6, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
     default:
       break;
   }
@@ -1501,7 +1518,7 @@ const JOIN_ERROR_LABEL = {
   not_public: 'Sala não é pública', already_in_room: 'Você já está em uma sala', server_full: 'Servidor cheio',
 };
 
-const DEFAULT_ROOM_CONFIG = { visibility: 'public', mode: 'coop', players: '4', lifeMode: 'respawn', difficulty: 'normal', autoRotate: 'off' };
+const DEFAULT_ROOM_CONFIG = { visibility: 'public', mode: 'coop', players: '4', lifeMode: 'respawn', difficulty: 'normal', autoRotate: 'off', map: 'office' };
 const roomConfig = { ...DEFAULT_ROOM_CONFIG };
 let editingExistingRoom = false;
 let latestRoomSettings = null;
@@ -1526,6 +1543,7 @@ setupOptGroup('#opt-players', 'players');
 setupOptGroup('#opt-lifemode', 'lifeMode');
 setupOptGroup('#opt-difficulty', 'difficulty');
 setupOptGroup('#opt-autorotate', 'autoRotate');
+setupOptGroup('#opt-map', 'map');
 
 function setOptGroupValue(selector, value) {
   const container = document.querySelector(selector);
@@ -1550,12 +1568,14 @@ function applySettingsToForm(settings, visibility) {
   roomConfig.lifeMode = settings.lifeMode;
   roomConfig.difficulty = settings.difficulty || 'normal';
   roomConfig.autoRotate = settings.autoRotate ? 'on' : 'off';
+  roomConfig.map = settings.map === 'garage' ? 'garage' : 'office';
   setOptGroupValue('#opt-visibility', roomConfig.visibility);
   setOptGroupValue('#opt-mode', roomConfig.mode);
   setOptGroupValue('#opt-players', roomConfig.players);
   setOptGroupValue('#opt-lifemode', roomConfig.lifeMode);
   setOptGroupValue('#opt-difficulty', roomConfig.difficulty);
   setOptGroupValue('#opt-autorotate', roomConfig.autoRotate);
+  setOptGroupValue('#opt-map', roomConfig.map);
   updateVersusScoreHint();
 }
 
@@ -1654,6 +1674,7 @@ ui.roomCreateSubmit.addEventListener('click', () => {
     lifeMode: roomConfig.lifeMode,
     difficulty: roomConfig.difficulty,
     autoRotate: roomConfig.autoRotate === 'on',
+    map: roomConfig.map,
   };
   if (editingExistingRoom) {
     socket.emit('updateRoomSettings', payload, (res) => {

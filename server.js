@@ -1129,6 +1129,7 @@ function updateZombies(room, now, dt) {
       let distance = Infinity;
       for (const player of living) {
         if (player.repelUntil && now < player.repelUntil) continue;
+        if (now < player.invulnerableUntil) continue;
         const candidate = Math.hypot(player.x - zombie.x, player.y - zombie.y);
         if (candidate > ZOMBIE_SIGHT_RANGE) continue;
         if (candidate < distance) { distance = candidate; target = player; }

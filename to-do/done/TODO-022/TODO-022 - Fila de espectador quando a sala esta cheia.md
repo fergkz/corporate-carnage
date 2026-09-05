@@ -1,6 +1,6 @@
 # TODO-022 — Fila de espectador quando a sala está cheia
 
-**Status**: pendente
+**Status**: concluído
 
 **Pedido original**: no brainstorm de melhorias pós-playtest, o assistente sugeriu "hoje, se não sobra bot pra substituir, `attemptJoin` simplesmente recusa (`reason: 'full'`) — pro público de um evento, entrar como espectador esperando vaga é bem melhor que ser rejeitado". Fernando pediu para implementar tudo o que foi sugerido no brainstorm.
 

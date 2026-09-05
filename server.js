@@ -45,8 +45,8 @@ const STAGES = [
       { x: 0, y: 9.2, w: 8, h: 1.1 },
       { x: -14.8, y: -10.8, w: 4.2, h: 1 },
       { x: 14.8, y: 10.8, w: 4.2, h: 1 },
-      { x: -15, y: -6, w: 4.4, h: 1.55 },
-      { x: 15, y: -6, w: 4.4, h: 1.55 },
+      { id: 'desk-oeste', x: -15, y: -6, w: 4.4, h: 1.55, destructible: true, hp: 40 },
+      { id: 'desk-leste', x: 15, y: -6, w: 4.4, h: 1.55, destructible: true, hp: 40 },
       { x: -15, y: 6, w: 4.4, h: 1.55 },
       { x: 15, y: 6, w: 4.4, h: 1.55 },
       { x: -15, y: 15, w: 4.4, h: 1.55 },
@@ -85,10 +85,10 @@ const STAGES = [
     // Apenas decoração enviada ao cliente para desenhar o escritório; não colide.
     props: [
       { type: 'reception', x: 0, y: 1.95, w: 6.6, h: 1.3 },
-      { type: 'desk', x: -15, y: -6, rot: 0 },
-      { type: 'desk', x: -12.6, y: -6.6, rot: 0 },
-      { type: 'desk', x: 15, y: -6, rot: Math.PI },
-      { type: 'desk', x: 12.6, y: -5.4, rot: Math.PI },
+      { id: 'desk-oeste', type: 'desk', x: -15, y: -6, rot: 0 },
+      { id: 'desk-oeste', type: 'desk', x: -12.6, y: -6.6, rot: 0 },
+      { id: 'desk-leste', type: 'desk', x: 15, y: -6, rot: Math.PI },
+      { id: 'desk-leste', type: 'desk', x: 12.6, y: -5.4, rot: Math.PI },
       { type: 'desk', x: -15, y: 6, rot: Math.PI },
       { type: 'desk', x: -12.6, y: 5.4, rot: Math.PI },
       { type: 'desk', x: 15, y: 6, rot: 0 },
@@ -654,8 +654,11 @@ function applyModeAndLifeMode(room, mode, lifeMode) {
 function applyStage(room, stageIndex, { preservePlayers }) {
   const stage = stagesFor(room)[stageIndex];
   room.stageIndex = stageIndex;
-  room.walls = stage.walls;
-  room.props = stage.props;
+  // Cópia por sala (não a referência direta do STAGES compartilhado) — sem
+  // isso, destruir uma mesa nesta sala destruiria a mesma mesa pra sempre em
+  // toda sala futura que use este estágio (ver damageDestructiblesNear).
+  room.walls = stage.walls.map((wall) => ({ ...wall }));
+  room.props = stage.props.map((prop) => ({ ...prop }));
   room.arena = stage.arena;
   room.pickupSpawnPool = stage.pickupSpawnPool;
   room.spawnPoints = stage.spawnPoints;
@@ -1036,6 +1039,27 @@ function collectPickups(room, player, now) {
   }
 }
 
+// Cobertura destrutível: mesas/mesa de reunião marcadas com `destructible`
+// em `room.walls` (cópia por sala, não a definição compartilhada de STAGES)
+// perdem HP com qualquer explosão por perto; ao chegar a 0, o próprio
+// registro de colisão é removido de `room.walls` (abre linha de visão de
+// verdade) e o prop correspondente (mesmo `id`) some de `room.props` —
+// cliente para de desenhar a mesa no próximo `stageChange`/snapshot.
+function damageDestructiblesNear(room, x, y, radius) {
+  for (let i = room.walls.length - 1; i >= 0; i -= 1) {
+    const wall = room.walls[i];
+    if (!wall.destructible || wall.hp <= 0) continue;
+    if (Math.hypot(wall.x - x, wall.y - y) > radius) continue;
+    wall.hp -= GRENADE_DAMAGE;
+    if (wall.hp > 0) continue;
+    room.walls.splice(i, 1);
+    // Um wall destrutível pode cobrir mais de um prop decorativo (ex. mesas
+    // emparelhadas na mesma caixa de colisão) — remove todos com o mesmo id.
+    room.props = room.props.filter((p) => p.id !== wall.id);
+    io.to(room.id).emit('propDestroyed', { id: wall.id, x: wall.x, y: wall.y });
+  }
+}
+
 function explodeGrenade(room, player, x, y) {
   io.to(room.id).emit('grenade', { x, y, radius: GRENADE_RADIUS });
   for (const zombie of room.zombies.values()) {
@@ -1047,6 +1071,7 @@ function explodeGrenade(room, player, x, y) {
       if (Math.hypot(other.x - x, other.y - y) <= GRENADE_RADIUS) applyDamage(room, other, GRENADE_DAMAGE, player, false);
     }
   }
+  damageDestructiblesNear(room, x, y, GRENADE_RADIUS);
 }
 
 function handleGrenade(room, player, data) {
@@ -1100,6 +1125,7 @@ function spawnZombie(room, opts = {}) {
 
 function explodeBomb(room, zombie, type) {
   io.to(room.id).emit('grenade', { x: zombie.x, y: zombie.y, radius: type.radiusExplode });
+  damageDestructiblesNear(room, zombie.x, zombie.y, type.radiusExplode);
   for (const player of room.players.values()) {
     if (!player.alive || !player.ready) continue;
     if (Math.hypot(player.x - zombie.x, player.y - zombie.y) > type.radiusExplode) continue;
@@ -1368,6 +1394,7 @@ function findTargetInDirection(room, originX, originY, angle, range, excludeId) 
 
 function explodeRocket(room, proj, x, y) {
   io.to(room.id).emit('grenade', { x, y, radius: proj.blastRadius });
+  damageDestructiblesNear(room, x, y, proj.blastRadius);
   const owner = room.players.get(proj.ownerId) || null;
   for (const zombie of room.zombies.values()) {
     if (Math.hypot(zombie.x - x, zombie.y - y) <= proj.blastRadius) applyDamage(room, zombie, proj.damage, owner, true);

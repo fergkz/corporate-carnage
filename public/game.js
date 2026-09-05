@@ -1747,6 +1747,16 @@ socket.on('matchStarted', () => {
 // diferente de `welcome`, que só chega uma vez ao entrar na sala. Limpa todo
 // estado visual do estágio anterior pra não sobrar zumbi/sangue "fantasma"
 // na tela por um frame antes do próximo snapshot chegar.
+// Cobertura destrutível (TODO-019): o servidor já removeu a colisão de
+// `room.walls`/`room.props`; aqui só espelhamos isso no `world.props` local
+// (o `world.walls` do cliente nem é usado pra colisão — o servidor é
+// autoritativo — só pra desenhar) e tocamos um efeito de estilhaço leve,
+// reaproveitando o mesmo efeito visual da explosão de granada.
+socket.on('propDestroyed', (data) => {
+  world.props = world.props.filter((p) => p.id !== data.id);
+  explosions.push({ x: data.x, y: data.y, radius: 1.4, life: 0.3, duration: 0.3 });
+  playSfx('explosion');
+});
 socket.on('stageChange', (data) => {
   world = { walls: data.walls, props: data.props, arena: data.arena };
   resetExploredMask(data.arena);

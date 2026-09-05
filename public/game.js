@@ -1275,6 +1275,20 @@ function showToast(text) {
   setTimeout(() => ui.pickup.classList.remove('show'), 1800);
 }
 
+// Feedback de "sem munição": reaproveita o toast de coleta e pisca o
+// contador de munição, disparado tanto pela predição local (attemptShoot)
+// quanto pela confirmação do servidor (weaponEmpty), que cobre o caso de o
+// estado local estar desatualizado.
+let lastEmptyFeedbackAt = 0;
+function flashEmptyAmmo() {
+  const now = performance.now();
+  if (now - lastEmptyFeedbackAt < 400) return;
+  lastEmptyFeedbackAt = now;
+  showToast('SEM MUNIÇÃO');
+  ui.ammo.classList.add('empty');
+  setTimeout(() => ui.ammo.classList.remove('empty'), 300);
+}
+
 // --- Armas: slots trocam no scroll do mouse; granada entra no mesmo ciclo ---
 const SLOT_ORDER = ['knife', 'pistol', 'rifle', 'shotgun', 'rocket', 'grenade'];
 const WEAPON_LABELS = { knife: 'FACA TÁTICA', pistol: 'PISTOLA P9', rifle: 'RIFLE AR-21', shotgun: 'ESCOPETA M12', rocket: 'LANÇA-MÍSSEIS', grenade: 'GRANADA' };
@@ -1320,6 +1334,10 @@ function attemptShoot() {
   if (!deployed || currentWeapon === 'grenade') return;
   const now = performance.now();
   if (now - lastClientShot < cooldowns[currentWeapon]) return;
+  if (currentWeapon !== 'knife' && selfState && (selfState.ammo || 0) < (AMMO_COST[currentWeapon] || 1)) {
+    flashEmptyAmmo();
+    return;
+  }
   lastClientShot = now;
   socket.emit('fire', { weapon: currentWeapon, angle: aimAngle() });
 }
@@ -1669,6 +1687,7 @@ socket.on('killfeed', (message) => {
 socket.on('pickup', (message) => {
   showToast(message.label);
 });
+socket.on('weaponEmpty', () => flashEmptyAmmo());
 socket.on('shot', (shot) => {
   const entity = entities.get(shot.id);
   if (shot.weapon === 'knife') {

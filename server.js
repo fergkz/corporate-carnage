@@ -804,7 +804,10 @@ function handleShot(room, player, data) {
   const now = Date.now();
   if (now - player.lastShot < weapon.cooldown) return;
   const cost = weapon.ammoCost || 0;
-  if (!weapon.melee && player.ammo < cost) return;
+  if (!weapon.melee && player.ammo < cost) {
+    io.to(player.id).emit('weaponEmpty', { weapon: data.weapon });
+    return;
+  }
   player.lastShot = now;
   player.weapon = data.weapon;
   if (!weapon.melee) player.ammo -= cost;

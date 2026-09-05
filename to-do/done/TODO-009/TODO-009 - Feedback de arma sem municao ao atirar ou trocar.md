@@ -1,6 +1,6 @@
 # TODO-009 — Feedback de arma sem munição ao atirar ou trocar
 
-**Status**: pendente
+**Status**: concluído
 
 **Pedido original**: já listado como próxima evolução no [CONTEXT.md](../CONTEXT.md) ("Criar feedback de arma sem munição") antes mesmo deste playtest; reforçado no relatório de playtest que o assistente entregou a Fernando, que pediu para transformar esse achado (e os outros do mesmo relatório) em itens de backlog.
 

@@ -35,7 +35,8 @@
       #shield-fill { height:100%; width:0%; background:linear-gradient(90deg,#2b6fa0,#54d6d2); box-shadow:0 0 12px #54d6d2; transition:width .15s; }
       #weapon { grid-column:3; grid-row:3; justify-self:end; align-self:end; text-align:right; }
       #weapon-name { font:700 27px 'Barlow Condensed'; letter-spacing:.1em; }
-      #ammo { color:var(--amber); font:700 18px 'Barlow Condensed'; letter-spacing:.08em; }
+      #ammo { color:var(--amber); font:700 18px 'Barlow Condensed'; letter-spacing:.08em; transition:color .1s; }
+      #ammo.empty { color:#ff4d4d; }
       #grenades { margin-top:6px; color:#8fd3d0; font:600 11px Inter; letter-spacing:.1em; }
       #grenades b { color:#fff; }
       #weapon-slots { display:flex; gap:6px; justify-content:end; margin-top:8px; }

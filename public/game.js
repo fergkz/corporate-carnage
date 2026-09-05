@@ -163,13 +163,11 @@ const ui = {
   landing: document.querySelector('#landing'), name: document.querySelector('#name'),
   btnCreateRoom: document.querySelector('#btn-create-room'), btnJoinByCode: document.querySelector('#btn-join-by-code'),
   roomCodeInput: document.querySelector('#room-code'), publicRooms: document.querySelector('#public-rooms'),
-  createRoomEl: document.querySelector('#createRoom'), createRoomTitle: document.querySelector('#createRoom-title'), roomNameInput: document.querySelector('#room-name'),
-  roomMaxInput: document.querySelector('#room-max'), zombieCountInput: document.querySelector('#zombie-count'),
-  npcCountInput: document.querySelector('#npc-count'), scoreLimitInput: document.querySelector('#score-limit'),
+  createRoomEl: document.querySelector('#createRoom'), createRoomTitle: document.querySelector('#createRoom-title'),
   roomCreateBack: document.querySelector('#room-create-back'),
   roomCreateSubmit: document.querySelector('#room-create-submit'),
   lobbyEl: document.querySelector('#lobby'), lobbyRoomName: document.querySelector('#lobby-room-name'),
-  lobbyRoomCode: document.querySelector('#lobby-room-code'), lobbyCopyLink: document.querySelector('#lobby-copy-link'),
+  lobbyLink: document.querySelector('#lobby-link'), lobbyCopyLink: document.querySelector('#lobby-copy-link'),
   lobbyPlayers: document.querySelector('#lobby-players'), lobbyStart: document.querySelector('#lobby-start'),
   lobbyStatus: document.querySelector('#lobby-status'), lobbySettings: document.querySelector('#lobby-settings'),
   lobbyLeave: document.querySelector('#lobby-leave'),
@@ -1375,13 +1373,13 @@ function updateHud(players) {
 
 const MODE_LABEL = { coop: 'COOP', versus: 'VERSUS' };
 const LIFE_LABEL = { respawn: 'RESPAWN', battleRoyale: 'BATTLE ROYALE' };
-const ZOMBIE_MODE_LABEL = { fixed: 'FIXA', constant: 'CONSTANTE', evolution: 'EVOLUÇÃO' };
+const DIFFICULTY_LABEL = { easy: 'FÁCIL', normal: 'NORMAL', hard: 'DIFÍCIL', insane: 'INSANO' };
 const JOIN_ERROR_LABEL = {
   not_found: 'Sala não encontrada', full: 'Sala cheia', already_started: 'Partida já em andamento',
   not_public: 'Sala não é pública', already_in_room: 'Você já está em uma sala', server_full: 'Servidor cheio',
 };
 
-const DEFAULT_ROOM_CONFIG = { visibility: 'public', mode: 'coop', lifeMode: 'respawn', zombieSpawnMode: 'constant', npcDifficulty: 'standard' };
+const DEFAULT_ROOM_CONFIG = { visibility: 'public', mode: 'coop', players: '4', lifeMode: 'respawn', difficulty: 'normal' };
 const roomConfig = { ...DEFAULT_ROOM_CONFIG };
 let editingExistingRoom = false;
 let latestRoomSettings = null;
@@ -1401,9 +1399,9 @@ function setupOptGroup(selector, axis) {
 }
 setupOptGroup('#opt-visibility', 'visibility');
 setupOptGroup('#opt-mode', 'mode');
+setupOptGroup('#opt-players', 'players');
 setupOptGroup('#opt-lifemode', 'lifeMode');
-setupOptGroup('#opt-zombiemode', 'zombieSpawnMode');
-setupOptGroup('#opt-npcdiff', 'npcDifficulty');
+setupOptGroup('#opt-difficulty', 'difficulty');
 
 function setOptGroupValue(selector, value) {
   const container = document.querySelector(selector);
@@ -1413,22 +1411,17 @@ function setOptGroupValue(selector, value) {
 
 // Preenche o formulário de criar-sala com uma config existente — reaproveitado
 // tanto para resetar aos padrões quanto para abrir "AJUSTAR CONFIGURAÇÕES".
-function applySettingsToForm(settings, visibility, name) {
+function applySettingsToForm(settings, visibility) {
   roomConfig.visibility = visibility || 'public';
   roomConfig.mode = settings.mode;
+  roomConfig.players = String(settings.maxPlayers);
   roomConfig.lifeMode = settings.lifeMode;
-  roomConfig.zombieSpawnMode = settings.zombieSpawnMode;
-  roomConfig.npcDifficulty = settings.npcDifficulty;
+  roomConfig.difficulty = settings.difficulty || 'normal';
   setOptGroupValue('#opt-visibility', roomConfig.visibility);
   setOptGroupValue('#opt-mode', roomConfig.mode);
+  setOptGroupValue('#opt-players', roomConfig.players);
   setOptGroupValue('#opt-lifemode', roomConfig.lifeMode);
-  setOptGroupValue('#opt-zombiemode', roomConfig.zombieSpawnMode);
-  setOptGroupValue('#opt-npcdiff', roomConfig.npcDifficulty);
-  ui.roomNameInput.value = name || '';
-  ui.roomMaxInput.value = settings.maxPlayers;
-  ui.zombieCountInput.value = settings.zombieBaseCount;
-  ui.npcCountInput.value = settings.npcCount;
-  ui.scoreLimitInput.value = settings.scoreLimit || 0;
+  setOptGroupValue('#opt-difficulty', roomConfig.difficulty);
 }
 
 function requestRoomList() {
@@ -1443,7 +1436,7 @@ function renderRoomList(rooms) {
   }
   ui.publicRooms.innerHTML = rooms.map((room) => `
     <div class="room-row">
-      <span>${escapeHtml(room.name)}<div class="meta">${room.playerCount}/${room.maxPlayers} · ${MODE_LABEL[room.mode] || room.mode} · ${LIFE_LABEL[room.lifeMode] || room.lifeMode} · ${ZOMBIE_MODE_LABEL[room.zombieSpawnMode] || ''}</div></span>
+      <span>${escapeHtml(room.name)}<div class="meta">${room.playerCount}/${room.maxPlayers} · ${MODE_LABEL[room.mode] || room.mode} · ${LIFE_LABEL[room.lifeMode] || room.lifeMode} · ${DIFFICULTY_LABEL[room.difficulty] || ''}</div></span>
       <button data-room="${room.id}" ${room.state !== 'lobby' ? 'disabled' : ''}>${room.state === 'lobby' ? 'ENTRAR' : 'EM ANDAMENTO'}</button>
     </div>`).join('');
   ui.publicRooms.querySelectorAll('button[data-room]').forEach((btn) => {
@@ -1484,13 +1477,16 @@ function renderLobby(data) {
   latestRoomSettings = data.settings;
   latestRoomVisibility = data.visibility || 'public';
   latestRoomName = data.name || '';
-  ui.lobbyRoomCode.textContent = roomCode || data.code || '------';
+  ui.lobbyLink.value = `${location.origin}${location.pathname}?room=${roomCode || data.code}`;
   ui.lobbyRoomName.textContent = latestRoomName || 'SALA';
   const players = data.players || [];
-  ui.lobbyPlayers.innerHTML = players.map((p) => `
-    <div class="player-row ${p.isHost ? 'host' : ''}">
-      <span>${escapeHtml(p.name)}${p.isHost ? '<span class="tag">HOST</span>' : ''}${p.isBot ? `<span class="tag">NPC · ${escapeHtml((p.botDifficulty || '').toUpperCase())}</span>` : ''}</span>
-    </div>`).join('') || '<div class="empty-hint">Ninguém na sala ainda</div>';
+  // Vagas sem jogador real (estejam ou não ocupadas por um bot nos
+  // bastidores) aparecem todas iguais: uma linha centralizada "aguardando
+  // jogador", sem revelar que já tem um bot ali.
+  ui.lobbyPlayers.innerHTML = players.map((p) => (p.isBot
+    ? '<div class="player-row open"><span class="meta">aguardando jogador</span></div>'
+    : `<div class="player-row ${p.isHost ? 'host' : ''}"><span>${escapeHtml(p.name)}${p.isHost ? '<span class="tag">HOST</span>' : ''}</span></div>`
+  )).join('') || '<div class="empty-hint">Ninguém na sala ainda</div>';
   ui.lobbyStart.style.display = isHost ? 'block' : 'none';
   ui.lobbySettings.style.display = isHost ? 'block' : 'none';
   ui.lobbyStatus.textContent = isHost ? '' : 'AGUARDANDO O HOST INICIAR A PARTIDA';
@@ -1510,19 +1506,18 @@ ui.btnCreateRoom.addEventListener('click', () => {
   ui.createRoomTitle.innerHTML = 'CRIAR<br><span>SALA</span>';
   ui.roomCreateSubmit.textContent = 'CRIAR SALA';
   Object.assign(roomConfig, DEFAULT_ROOM_CONFIG);
-  applySettingsToForm({ mode: 'coop', lifeMode: 'respawn', zombieSpawnMode: 'constant', npcDifficulty: 'standard', maxPlayers: 8, zombieBaseCount: 14, npcCount: 0, scoreLimit: 0 }, 'public', '');
+  applySettingsToForm({ mode: 'coop', lifeMode: 'respawn', maxPlayers: 4, difficulty: 'normal' }, 'public');
   setClientState('createRoom');
 });
 ui.roomCreateBack.addEventListener('click', () => setClientState(editingExistingRoom ? 'lobby' : 'landing'));
 ui.btnJoinByCode.addEventListener('click', attemptJoinByCode);
 ui.roomCreateSubmit.addEventListener('click', () => {
   const payload = {
-    ...roomConfig,
-    roomName: ui.roomNameInput.value,
-    maxPlayers: Number(ui.roomMaxInput.value),
-    zombieBaseCount: Number(ui.zombieCountInput.value),
-    npcCount: Number(ui.npcCountInput.value),
-    scoreLimit: Number(ui.scoreLimitInput.value),
+    visibility: roomConfig.visibility,
+    mode: roomConfig.mode,
+    maxPlayers: Number(roomConfig.players),
+    lifeMode: roomConfig.lifeMode,
+    difficulty: roomConfig.difficulty,
   };
   if (editingExistingRoom) {
     socket.emit('updateRoomSettings', payload, (res) => {
@@ -1548,11 +1543,11 @@ ui.lobbySettings.addEventListener('click', () => {
   editingExistingRoom = true;
   ui.createRoomTitle.innerHTML = 'AJUSTAR<br><span>SALA</span>';
   ui.roomCreateSubmit.textContent = 'SALVAR ALTERAÇÕES';
-  applySettingsToForm(latestRoomSettings, latestRoomVisibility, latestRoomName);
+  applySettingsToForm(latestRoomSettings, latestRoomVisibility);
   setClientState('createRoom');
 });
 ui.lobbyCopyLink.addEventListener('click', () => {
-  const link = `${location.origin}${location.pathname}?room=${roomCode}`;
+  const link = ui.lobbyLink.value || `${location.origin}${location.pathname}?room=${roomCode}`;
   if (navigator.clipboard) navigator.clipboard.writeText(link).then(() => showToast('LINK COPIADO')).catch(() => showToast(link));
   else showToast(link);
 });

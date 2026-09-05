@@ -91,6 +91,7 @@
       .room-row,.player-row { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:9px 12px; background:linear-gradient(90deg,rgba(7,13,16,.8),rgba(7,13,16,.35)); border-left:2px solid transparent; margin-bottom:6px; font-size:12px; color:#d8e0e3; }
       .room-row .meta,.player-row .meta { color:#8d9a9f; font-size:10px; letter-spacing:.06em; }
       .player-row.host { border-color:var(--amber); }
+      .player-row.open { justify-content:center; }
       .player-row .tag { color:#f3a229; font-size:9px; letter-spacing:.1em; margin-left:6px; }
       .room-row button { height:32px; padding:0 12px; font-size:10px; }
       .empty-hint { color:#5f6d72; font-size:11px; padding:10px 0; text-align:center; }
@@ -130,20 +131,11 @@
     <div id="createRoom">
       <div class="start-card wide">
         <h1 id="createRoom-title">CRIAR<br><span>SALA</span></h1>
-        <div class="form-row"><label>NOME DA SALA</label><div class="field"><input id="room-name" maxlength="24" placeholder="Sala de operações"></div></div>
-        <div class="two-col">
-          <div class="form-row"><label>MÁX. JOGADORES</label><div class="field"><input id="room-max" type="number" min="2" max="16" value="8"></div></div>
-          <div class="form-row"><label>VISIBILIDADE</label><div class="opt-group" id="opt-visibility" data-axis="visibility"><div class="opt active" data-value="public">PÚBLICA</div><div class="opt" data-value="private">SÓ POR LINK</div></div></div>
-        </div>
+        <div class="form-row"><label>VISIBILIDADE</label><div class="opt-group" id="opt-visibility" data-axis="visibility"><div class="opt active" data-value="public">PÚBLICA</div><div class="opt" data-value="private">SÓ POR LINK</div></div></div>
         <div class="form-row"><label>MODO</label><div class="opt-group" id="opt-mode" data-axis="mode"><div class="opt active" data-value="coop">COOP (vs zumbis)</div><div class="opt" data-value="versus">VERSUS (PvP)</div></div></div>
+        <div class="form-row"><label>JOGADORES</label><div class="opt-group" id="opt-players" data-axis="players"><div class="opt" data-value="2">2</div><div class="opt active" data-value="4">4</div><div class="opt" data-value="6">6</div><div class="opt" data-value="8">8</div></div></div>
         <div class="form-row"><label>ESTILO DE VIDA</label><div class="opt-group" id="opt-lifemode" data-axis="lifeMode"><div class="opt active" data-value="respawn">RESPAWN</div><div class="opt" data-value="battleRoyale">BATTLE ROYALE</div></div></div>
-        <div class="form-row"><label>POPULAÇÃO DE ZUMBIS</label><div class="opt-group" id="opt-zombiemode" data-axis="zombieSpawnMode"><div class="opt" data-value="fixed">FIXA</div><div class="opt active" data-value="constant">CONSTANTE</div><div class="opt" data-value="evolution">EVOLUÇÃO</div></div></div>
-        <div class="two-col">
-          <div class="form-row"><label>QTD. BASE DE ZUMBIS</label><div class="field"><input id="zombie-count" type="number" min="0" max="60" value="14"></div></div>
-          <div class="form-row"><label>NPCs NA SALA</label><div class="field"><input id="npc-count" type="number" min="0" max="15" value="0"></div></div>
-        </div>
-        <div class="form-row"><label>DIFICULDADE DOS NPCs</label><div class="opt-group" id="opt-npcdiff" data-axis="npcDifficulty"><div class="opt" data-value="low">BAIXA</div><div class="opt active" data-value="standard">PADRÃO</div><div class="opt" data-value="high">ALTA</div></div></div>
-        <div class="form-row"><label>PONTUAÇÃO LIMITE (0 = desativado)</label><div class="field"><input id="score-limit" type="number" min="0" max="500" value="0"></div></div>
+        <div class="form-row"><label>DIFICULDADE</label><div class="opt-group" id="opt-difficulty" data-axis="difficulty"><div class="opt" data-value="easy">FÁCIL</div><div class="opt active" data-value="normal">NORMAL</div><div class="opt" data-value="hard">DIFÍCIL</div><div class="opt" data-value="insane">INSANO</div></div></div>
         <div class="field" style="margin-top:10px"><button id="room-create-back" class="ghost">VOLTAR</button><button id="room-create-submit">CRIAR SALA</button></div>
       </div>
     </div>
@@ -151,7 +143,7 @@
     <div id="lobby">
       <div class="start-card wide">
         <h1 id="lobby-room-name">SALA</h1>
-        <p>Código da sala: <span class="room-code-display" id="lobby-room-code">------</span> <button id="lobby-copy-link" class="ghost" style="height:32px;padding:0 10px;font-size:10px;margin-left:8px">COPIAR LINK</button></p>
+        <div class="field" style="margin:14px 0"><input id="lobby-link" readonly><button id="lobby-copy-link" class="ghost" style="white-space:nowrap">COPIAR LINK</button></div>
         <div class="section-title">AGENTES NA SALA</div>
         <div id="lobby-players" class="room-list"></div>
         <button id="lobby-start">INICIAR PARTIDA</button>

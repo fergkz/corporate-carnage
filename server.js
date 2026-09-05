@@ -193,6 +193,11 @@ const ZOMBIE_TYPES = [
   { id: 'armored', weight: 5, hp: 90, speed: [1.1, 1.4], radius: 0.5, meleeDamage: 14, meleeRange: 1.15, meleeCooldownMs: 900, damageReduction: 0.45 },
   { id: 'leaper', weight: 5, hp: 60, speed: [1.3, 1.6], radius: 0.48, special: 'leap', leapRange: 5, leapCooldownMs: 3000, meleeDamage: 18, meleeRange: 1.2, meleeCooldownMs: 1000 },
   { id: 'gasser', weight: 5, hp: 50, speed: [1.2, 1.5], radius: 0.48, special: 'gasser', meleeDamage: 10, meleeRange: 1.1, meleeCooldownMs: 900 },
+  // Zumbi Alfa: alvo secundário de alto risco/recompensa. `weight: 0` pra
+  // nunca ser sorteado por `pickZombieType()` — só nasce forçado via
+  // `updateAlphaSpawn()`. Não tem `special` (não usa nenhuma das rotinas de
+  // ataque especial) — só é mais forte e vale mais pontos.
+  { id: 'alpha', weight: 0, hp: 480, speed: [1.0, 1.2], radius: 0.85, meleeDamage: 24, meleeRange: 1.3, meleeCooldownMs: 950, scoreValue: 10 },
 ];
 const ZOMBIE_TYPES_BY_ID = Object.fromEntries(ZOMBIE_TYPES.map((type) => [type.id, type]));
 
@@ -209,6 +214,7 @@ function pickZombieType() {
 // Crescimento de população no modo "evolução": lotes periódicos até um teto rígido,
 // salvaguarda deliberada contra crescimento sem limite degradar a simulação.
 const EVOLUTION_INTERVAL_MS = 25000;
+const ALPHA_SPAWN_INTERVAL_MS = 75000;
 const EVOLUTION_BATCH_BASE = 2;
 const EVOLUTION_BATCH_MAX = 5;
 const EVOLUTION_CAP_MULTIPLIER = 2.5;
@@ -470,6 +476,8 @@ function buildRoom(hostSocket, config, hostName) {
     spawnPoints: STAGES[0].spawnPoints,
     stageProgress: null,
     finalWaveAnnounced: false,
+    alphaZombieId: null,
+    alphaSpawnAt: Date.now() + ALPHA_SPAWN_INTERVAL_MS,
   };
   seedPickups(room);
   rooms.set(room.id, room);
@@ -599,6 +607,8 @@ function applyStage(room, stageIndex, { preservePlayers }) {
     room.stageProgress = { type: 'eliminate', target: objective.target, count: 0 };
   }
   room.finalWaveAnnounced = false;
+  room.alphaZombieId = null;
+  room.alphaSpawnAt = Date.now() + ALPHA_SPAWN_INTERVAL_MS;
 
   room.evolutionState = {
     nextSpawnAt: Date.now() + EVOLUTION_INTERVAL_MS,
@@ -813,8 +823,9 @@ function applyDamage(room, target, damage, attacker, isZombieTarget) {
     const type = ZOMBIE_TYPES_BY_ID[target.typeId];
     room.zombies.delete(target.id);
     registerZombieKill(room, target);
+    if (room.alphaZombieId === target.id) room.alphaZombieId = null;
     if (attacker) {
-      attacker.score += 1;
+      attacker.score += type?.scoreValue || 1;
       grantZombieKillReward(attacker, type);
     }
     if (type && type.special === 'gasser') spawnGasCloud(room, target.x, target.y);
@@ -1383,6 +1394,19 @@ function updateHazards(room, now, dt) {
   }
 }
 
+// Zumbi Alfa: alvo secundário de alto risco/recompensa, anunciado no HUD,
+// que nasce a cada ALPHA_SPAWN_INTERVAL_MS desde que nenhum outro Alfa esteja
+// vivo na sala. `room.alphaZombieId` é limpo em `applyDamage` quando ele
+// morre (por qualquer fonte de dano — tiro, faca, granada, míssil, lâminas,
+// já que todas passam por `applyDamage`).
+function updateAlphaSpawn(room, now) {
+  if (room.alphaZombieId || now < room.alphaSpawnAt) return;
+  const alpha = spawnZombie(room, { forceTypeId: 'alpha' });
+  room.alphaZombieId = alpha.id;
+  room.alphaSpawnAt = now + ALPHA_SPAWN_INTERVAL_MS;
+  io.to(room.id).emit('announcement', { title: 'ZUMBI ALFA DETECTADO', subtitle: 'Elimine para pontos extras' });
+}
+
 function updateEvolutionSpawns(room, now) {
   if (room.config.zombieSpawnMode !== 'evolution' || !room.evolutionState) return;
   const state = room.evolutionState;
@@ -1756,6 +1780,7 @@ function update(room) {
   updateZombies(room, now, dt);
   updateProjectiles(room, now, dt);
   updateEvolutionSpawns(room, now);
+  updateAlphaSpawn(room, now);
   updateBlades(room, now, dt);
   updateHazards(room, now, dt);
 

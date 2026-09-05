@@ -91,6 +91,9 @@ const ZOMBIE_TYPE_META = {
   armored: { sprite: 'zombie_big.png', size: 1.2, maxHp: 90 },
   leaper: { sprite: 'zombie_stretcher.png', size: 1.15, maxHp: 60 },
   gasser: { sprite: 'zombie_spitter.png', size: 1.15, maxHp: 50 },
+  // Zumbi Alfa: reaproveita o corpo do tanque (o mais ameaçador já existente,
+  // maior que o normal), distinguido pelo brilho dourado em ZOMBIE_GLOW.
+  alpha: { sprite: 'zombie_tank.png', size: 1.7, maxHp: 480 },
 };
 
 const ZOMBIE_GLOW = {
@@ -99,6 +102,7 @@ const ZOMBIE_GLOW = {
   armored: '150,170,190',
   leaper: '255,150,40',
   gasser: '140,220,80',
+  alpha: '255,215,0',
 };
 
 const sprites = {

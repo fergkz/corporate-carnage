@@ -1,6 +1,6 @@
 # TODO-011 — Modo de qualidade gráfica reduzida para dispositivos fracos
 
-**Status**: pendente
+**Status**: concluído
 
 **Pedido original**: no relatório de playtest entregue a Fernando, o assistente apontou que "ainda não foi medido o desempenho em computadores/celulares fracos" como pendência para o lançamento online do jogo (item já citado antes no [CONTEXT.md](../CONTEXT.md), seção "Próximas evoluções possíveis": "Medir FPS em computadores e celulares usados no evento"). Fernando pediu para transformar esse achado (e os outros do mesmo relatório) em itens de backlog — aqui documentado como a contrapartida de implementação (uma opção de qualidade reduzida), já que "medir FPS" em si é uma ação de teste, não uma mudança de código.
 

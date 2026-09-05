@@ -96,6 +96,8 @@
       .player-row .tag { color:#f3a229; font-size:9px; letter-spacing:.1em; margin-left:6px; }
       .room-row button { height:32px; padding:0 12px; font-size:10px; }
       .empty-hint { color:#5f6d72; font-size:11px; padding:10px 0; text-align:center; }
+      #spectator-banner { display:none; position:fixed; top:10px; left:50%; transform:translateX(-50%); z-index:30; background:rgba(7,13,16,.85); color:var(--amber); border:1px solid var(--amber); border-radius:4px; padding:6px 16px; font:700 13px 'Barlow Condensed'; letter-spacing:.1em; }
+      #hud.spectating #health, #hud.spectating #weapon { display:none; }
       #mute-toggle, #quality-toggle { position:fixed; top:10px; z-index:30; background:rgba(7,13,16,.75); color:#8d9a9f; border:1px solid #303a3d; border-radius:4px; padding:5px 10px; font:700 10px 'Barlow Condensed'; letter-spacing:.1em; cursor:pointer; }
       #mute-toggle:hover, #quality-toggle:hover { color:var(--amber); border-color:var(--amber); }
       #mute-toggle { right:10px; }
@@ -109,6 +111,7 @@
   </head>
   <body>
     <canvas id="scene"></canvas>
+    <div id="spectator-banner"></div>
     <button id="mute-toggle">SOM: ON</button>
     <button id="quality-toggle">GRÁFICOS: ALTO</button>
     <div id="vignette" class="overlay"></div><div id="damage" class="overlay"></div>

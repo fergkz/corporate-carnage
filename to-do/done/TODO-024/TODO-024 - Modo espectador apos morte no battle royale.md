@@ -1,6 +1,6 @@
 # TODO-024 — Modo espectador após morte no Battle Royale
 
-**Status**: pendente
+**Status**: concluído
 
 **Pedido original**: no brainstorm de melhorias pós-playtest, o assistente sugeriu "quem morre em battle royale fica parado sem indicação até o fim — seguir a câmera de um jogador vivo resolveria isso". Fernando pediu para implementar tudo o que foi sugerido no brainstorm.
 

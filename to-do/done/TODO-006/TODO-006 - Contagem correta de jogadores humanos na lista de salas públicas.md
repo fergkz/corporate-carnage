@@ -1,6 +1,6 @@
 # TODO-006 — Contagem correta de jogadores humanos na lista de salas públicas
 
-**Status**: pendente
+**Status**: concluído
 
 **Pedido original**: durante um playtest guiado (jogado dentro de um container Docker isolado, código idêntico ao branch atual), o assistente relatou a Fernando: "a lista de salas públicas mostra a sala como cheia (N/N) mesmo recém-criada, sem nenhum jogador humano além do host". Fernando respondeu "gostei, crie planos de implementação em forma de todo para essas coisas que vc mencionou", pedindo que esse achado (e os outros do mesmo relatório) virassem itens de backlog.
 

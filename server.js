@@ -478,8 +478,9 @@ function lobbyPayload(room) {
 }
 
 function serializeRoomForList(room) {
+  const humanCount = [...room.players.values()].filter((p) => !p.isBot).length;
   return {
-    id: room.id, name: room.name, playerCount: room.players.size, maxPlayers: room.config.maxPlayers,
+    id: room.id, name: room.name, playerCount: humanCount, maxPlayers: room.config.maxPlayers,
     mode: room.config.mode, lifeMode: room.config.lifeMode, difficulty: room.config.difficulty, state: room.state,
   };
 }

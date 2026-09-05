@@ -156,6 +156,41 @@ const STAGES = [
   },
 ];
 
+// Mapa alternativo (garagem/estacionamento): mesmas regras, cenário
+// diferente — corredores retos e longos com pilares de cobertura pontual,
+// em vez das salas compartimentadas do escritório. Reaproveita a mesma
+// "sala_final" do escritório como confronto final, pra não precisar
+// desenhar uma segunda arena de chefe.
+const GARAGE_STAGE = {
+  id: 'garagem',
+  name: 'Estacionamento — Nível B2',
+  arena: 26,
+  walls: [
+    { x: -14, y: -14, w: 1.6, h: 1.6 }, { x: 0, y: -14, w: 1.6, h: 1.6 }, { x: 14, y: -14, w: 1.6, h: 1.6 },
+    { x: -14, y: 0, w: 1.6, h: 1.6 }, { x: 14, y: 0, w: 1.6, h: 1.6 },
+    { x: -14, y: 14, w: 1.6, h: 1.6 }, { x: 0, y: 14, w: 1.6, h: 1.6 }, { x: 14, y: 14, w: 1.6, h: 1.6 },
+  ],
+  props: [
+    { type: 'pillar', x: -14, y: -14 }, { type: 'pillar', x: 0, y: -14 }, { type: 'pillar', x: 14, y: -14 },
+    { type: 'pillar', x: -14, y: 0 }, { type: 'pillar', x: 14, y: 0 },
+    { type: 'pillar', x: -14, y: 14 }, { type: 'pillar', x: 0, y: 14 }, { type: 'pillar', x: 14, y: 14 },
+    { type: 'sign', x: 0, y: -24.6, text: 'ESTACIONAMENTO B2' },
+  ],
+  pickupSpawnPool: [
+    [-14, -7], [14, 7], [-7, -14], [7, 14], [0, -7], [0, 7], [-7, 0], [7, 0], [-18, 0], [18, 0],
+  ],
+  spawnPoints: [[-20, -20], [20, 20], [-20, 20], [20, -20], [0, -22], [0, 22]],
+  objective: (room) => ({ type: 'eliminate', target: Math.max(10, room.config.zombieBaseCount + 6) }),
+};
+
+const MAP_STAGE_SETS = {
+  office: STAGES,
+  garage: [GARAGE_STAGE, STAGES[1]],
+};
+function stagesFor(room) {
+  return MAP_STAGE_SETS[room.config.map] || STAGES;
+}
+
 const weapons = {
   knife: { damage: 42, cooldown: 480, pellets: 1, spread: 0.04, range: 1.85, melee: true },
   pistol: { damage: 28, cooldown: 330, pellets: 1, spread: 0.012, range: 32, ammoCost: 1 },
@@ -447,6 +482,8 @@ function buildRoom(hostSocket, config, hostName) {
   const preset = DIFFICULTY_PRESETS[difficulty];
   const maxPlayers = clamp(Math.round(Number(config.maxPlayers)) || 4, 2, 16);
   const mode = config.mode === 'versus' ? 'versus' : 'coop';
+  const mapId = config.map === 'garage' ? 'garage' : 'office';
+  const initialStages = MAP_STAGE_SETS[mapId];
   const room = {
     id: code,
     code,
@@ -465,6 +502,7 @@ function buildRoom(hostSocket, config, hostName) {
       npcDifficulty: preset.npcDifficulty,
       scoreLimit: mode === 'versus' ? VERSUS_SCORE_LIMIT : 0,
       autoRotate: config.autoRotate === true,
+      map: mapId,
     },
     players: new Map(),
     zombies: new Map(),
@@ -483,11 +521,11 @@ function buildRoom(hostSocket, config, hostName) {
     // já existir algo válido pra desenhar/colidir enquanto a sala ainda está
     // no lobby; `applyStage` reatribui isso quando a partida começa de verdade.
     stageIndex: 0,
-    walls: STAGES[0].walls,
-    props: STAGES[0].props,
-    arena: STAGES[0].arena,
-    pickupSpawnPool: STAGES[0].pickupSpawnPool,
-    spawnPoints: STAGES[0].spawnPoints,
+    walls: initialStages[0].walls,
+    props: initialStages[0].props,
+    arena: initialStages[0].arena,
+    pickupSpawnPool: initialStages[0].pickupSpawnPool,
+    spawnPoints: initialStages[0].spawnPoints,
     stageProgress: null,
     finalWaveAnnounced: false,
     alphaZombieId: null,
@@ -604,7 +642,7 @@ function applyModeAndLifeMode(room, mode, lifeMode) {
 }
 
 function applyStage(room, stageIndex, { preservePlayers }) {
-  const stage = STAGES[stageIndex];
+  const stage = stagesFor(room)[stageIndex];
   room.stageIndex = stageIndex;
   room.walls = stage.walls;
   room.props = stage.props;
@@ -656,7 +694,7 @@ function applyStage(room, stageIndex, { preservePlayers }) {
 
   io.to(room.id).emit('stageChange', {
     walls: room.walls, props: room.props, arena: room.arena,
-    stageIndex, stageCount: STAGES.length, stageName: stage.name,
+    stageIndex, stageCount: stagesFor(room).length, stageName: stage.name,
   });
   io.to(room.id).emit('announcement', { title: stage.name.toUpperCase(), subtitle: describeObjective(room.stageProgress) });
 }
@@ -1465,7 +1503,7 @@ function checkStageObjective(room, now) {
   if (!progress) return;
   const done = progress.type === 'eliminate' ? progress.count >= progress.target : progress.bossDead;
   if (!done) return;
-  if (room.stageIndex + 1 < STAGES.length) {
+  if (room.stageIndex + 1 < stagesFor(room).length) {
     applyStage(room, room.stageIndex + 1, { preservePlayers: true });
   } else {
     finishRound(room, 'campaignComplete');
@@ -1700,6 +1738,10 @@ io.on('connection', (socket) => {
     if (data.visibility === 'public' || data.visibility === 'private') room.visibility = data.visibility;
     applyModeAndLifeMode(room, data.mode, data.lifeMode);
     if (typeof data.autoRotate === 'boolean') room.config.autoRotate = data.autoRotate;
+    // Só atualiza a config — o mapa novo entra em vigor no próximo
+    // resetMatch()/applyStage(0,...), igual difficulty/mode já funcionam
+    // (nenhum dos dois reaplica o estágio imediatamente aqui).
+    if (data.map === 'office' || data.map === 'garage') room.config.map = data.map;
     if (Object.prototype.hasOwnProperty.call(DIFFICULTY_PRESETS, data.difficulty)) {
       const preset = DIFFICULTY_PRESETS[data.difficulty];
       room.config.difficulty = data.difficulty;
@@ -1817,7 +1859,7 @@ function update(room) {
   io.to(room.id).emit('snapshot', {
     now,
     stage: {
-      index: room.stageIndex, count: STAGES.length, name: STAGES[room.stageIndex].name,
+      index: room.stageIndex, count: stagesFor(room).length, name: stagesFor(room)[room.stageIndex].name,
       objectiveLabel: describeObjective(room.stageProgress),
     },
     players: [...room.players.values()].filter((player) => player.ready).map(

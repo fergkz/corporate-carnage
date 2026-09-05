@@ -20,6 +20,9 @@
       #brand strong { color:var(--amber); font-size:19px; display:block; letter-spacing:.1em; }
       #timer { grid-column:2; justify-self:center; font:700 34px 'Barlow Condensed'; letter-spacing:.08em; }
       #timer small { font:500 10px Inter; display:block; text-align:center; color:#93a1a7; letter-spacing:.2em; }
+      #objective { grid-row:2; grid-column:1/-1; justify-self:center; align-self:start; margin-top:6px; text-align:center; }
+      #objective .label { margin-bottom:2px; }
+      #objective span { font:600 13px Inter; color:#d8e0e3; letter-spacing:.04em; }
       #connection { grid-column:3; justify-self:end; color:#8d9a9f; font-size:11px; letter-spacing:.12em; }
       #connection::before { content:''; display:inline-block; width:6px; height:6px; margin-right:7px; border-radius:50%; background:#50d89d; box-shadow:0 0 10px #50d89d; }
       #health { grid-column:1; grid-row:3; align-self:end; width:220px; }
@@ -100,9 +103,10 @@
     <div id="vignette" class="overlay"></div><div id="damage" class="overlay"></div>
     <div id="hud" class="overlay">
       <div id="brand"><strong>CORPORATE CARNAGE</strong>CONTENÇÃO EXECUTIVA</div>
-      <div id="timer"><small>TEMPO RESTANTE</small><span>03:00</span></div><div id="connection">CONECTANDO</div>
+      <div id="timer"><small>ESTÁGIO</small><span>1/1</span></div><div id="connection">CONECTANDO</div>
       <div id="health"><div class="label">INTEGRIDADE</div><div class="bar"><div id="health-fill"></div></div><div id="health-number">100</div><div class="bar" id="shield-bar"><div id="shield-fill"></div></div></div>
       <div id="weapon"><div class="label">EQUIPAMENTO ATIVO</div><div id="weapon-name">FACA TÁTICA</div><div id="ammo">∞</div><div id="weapon-slots"><div class="slot active">1 FACA</div><div class="slot locked">2 PISTOLA</div><div class="slot locked">3 RIFLE</div><div class="slot locked">4 ESCOPETA</div><div class="slot locked">5 MÍSSIL</div><div class="slot locked">6 GRANADA</div></div><div id="grenades">GRANADAS <b id="grenade-count">0</b></div></div>
+      <div id="objective"><div class="label">OBJETIVO</div><span></span></div>
     </div>
     <div id="scoreboard"></div><div id="killfeed"></div><div id="announcement"><h2></h2><p></p></div>
     <div id="commands">WASD MOVER · MOUSE MIRAR · SCROLL/1–6 TROCAR ITEM · CLIQUE ATACAR/LANÇAR · G GRANADA RÁPIDA · ESC SAIR</div><div id="pickup-toast"></div>
@@ -139,7 +143,7 @@
           <div class="form-row"><label>NPCs NA SALA</label><div class="field"><input id="npc-count" type="number" min="0" max="15" value="0"></div></div>
         </div>
         <div class="form-row"><label>DIFICULDADE DOS NPCs</label><div class="opt-group" id="opt-npcdiff" data-axis="npcDifficulty"><div class="opt" data-value="low">BAIXA</div><div class="opt active" data-value="standard">PADRÃO</div><div class="opt" data-value="high">ALTA</div></div></div>
-        <div class="form-row"><label>PONTUAÇÃO LIMITE (0 = só por tempo)</label><div class="field"><input id="score-limit" type="number" min="0" max="500" value="0"></div></div>
+        <div class="form-row"><label>PONTUAÇÃO LIMITE (0 = desativado)</label><div class="field"><input id="score-limit" type="number" min="0" max="500" value="0"></div></div>
         <div class="field" style="margin-top:10px"><button id="room-create-back" class="ghost">VOLTAR</button><button id="room-create-submit">CRIAR SALA</button></div>
       </div>
     </div>
@@ -157,7 +161,7 @@
       </div>
     </div>
 
-    <div id="roundend"><div class="start-card"><h1>FIM DA<br><span>OPERAÇÃO</span></h1><div id="roundend-scoreboard"></div><button id="roundend-ready">PRÓXIMA PARTIDA</button><button id="roundend-lobby" class="ghost" style="display:none">AJUSTAR SALA</button><button id="roundend-leave" class="ghost" style="width:100%;margin-top:8px">SAIR DA SALA</button><div id="roundend-status"></div></div></div>
+    <div id="roundend"><div class="start-card"><h1 id="roundend-title">FIM DA<br><span>OPERAÇÃO</span></h1><div id="roundend-scoreboard"></div><button id="roundend-ready">PRÓXIMA PARTIDA</button><button id="roundend-lobby" class="ghost" style="display:none">AJUSTAR SALA</button><button id="roundend-leave" class="ghost" style="width:100%;margin-top:8px">SAIR DA SALA</button><div id="roundend-status"></div></div></div>
     <script src="/socket.io/socket.io.js"></script><script type="module" src="/game.js"></script>
   </body>
 </html>

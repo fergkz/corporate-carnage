@@ -379,3 +379,36 @@ Fernando notou que morte de jogador/zumbi não tinha nenhuma animação (a entid
 - `blood_stain.png`: 5 variações de mancha de sangue estática, uma sorteada por morte, que fica no chão por alguns segundos e desaparece com fade.
 
 Implementação em `public/game.js`: a transição de `alive: true → false` é detectada dentro de `interpolate()` (comparando o estado anterior antes de sobrescrever) e dispara `spawnDeathEffect`, que empilha um corpo (`corpses`, dura ~4.2s) e um esguicho de sangue (`bloodBursts`, ~0.3s) — ambos desacoplados do Map `entities`, então continuam visíveis mesmo depois que o id original é reciclado por um respawn. As pastas "Damaged Player/Zombie Animation Frames" do pacote foram investigadas mas eram um efeito de flash de dano (silhueta preta/rosa alternando), não uma pose de morte — não foram usadas.
+
+## Dossiê visual e decisão de virar campanha por estágios
+
+Fernando achou o jogo "muito feio" em armas na mão, itens no chão, paredes/móveis e pediu uma análise profunda (com pesquisa de sprites alternativos) além do mapa "o dobro maior" e de uma arquitetura de campanha: N salas em sequência, cada uma com uma missão que libera a próxima, começando com campanhas padrão e deixando margem para campanhas criadas por jogadores no futuro.
+
+Publiquei um dossiê (artifact) com o diagnóstico visual, grounded nos arquivos reais de sprite:
+
+- **Armas na mão/pickups**: os recortes de pistola/rifle/escopeta do pacote Ittai Manero têm só 16×5, 24×8 e 12×4 pixels — mesmo sem upscale, não sobra pixel pra desenhar um formato de arma reconhecível. Recomendação (ainda não aplicada, precisa de download de terceiro e autorização explícita): "Free Guns Pixel Art" (Arlan_TR, itch.io, 32×32, grátis) ou Kenney "Top-down Shooter" (CC0, mas estilo vetorial que não bate com o pixel art atual).
+- **Munição/itens no chão**: recortes de 4×8/8×8/12×8 px, praticamente ilegíveis quando ampliados.
+- **Mobília de escritório**: LimeZu "Modern Office" (16×16, ~$2,50) cotado como opção paga para trocar mesa/cadeira/monitor por sprite de verdade em vez de vetor desenhado por código — Fernando optou por não comprar por enquanto, só os retoques gratuitos.
+
+### Decisões confirmadas com Fernando
+
+1. Campanha por estágios **substitui** o modo de partida cronometrada de 3 min com placar — e uma campanha de um estágio só continua válida (generaliza o caso de hoje, não é modo especial à parte).
+2. Persistência total entre estágios: arma, munição, vida, escudo e granadas continuam ao avançar de estágio.
+3. Sprites: só o caminho gratuito nesta rodada — sem comprar o tileset da LimeZu.
+
+### Sistema de campanhas (implementado)
+
+`server.js` ganhou um array `STAGES` — cada estágio carrega seu próprio `walls`/`props`/`arena`/`pickupSpawnPool`/`spawnPoints` e uma função `objective(room)`. Isso substituiu as antigas constantes globais únicas `walls`/`props`/`ARENA`/`PICKUP_SPAWN_POOL` (agora dado por estágio, guardado em `room.walls`/`room.props`/`room.arena`/etc). A campanha padrão tem 2 estágios:
+
+1. **Contenção Executiva** (`escritorio`) — o escritório de sempre, layout idêntico ao que já existia, sem nenhuma mudança de balanceamento. Objetivo: eliminar `max(10, zombieBaseCount + 6)` infectados.
+2. **Sala de Reunião — Confronto Final** (`sala_final`) — uma arena nova e compacta (32×32 unidades, mesa de reunião central como cobertura, 4 pilares decorados com plantas), com um zumbi-tanque marcado como chefe (`isBoss`) mais 5 escoltas. Objetivo: derrotar o zumbi-tanque.
+
+`applyStage(room, stageIndex, { preservePlayers })` centraliza a troca de estágio: recarrega layout/zumbis/pickups e, quando `preservePlayers: true` (transição no meio da campanha), só reposiciona jogadores vivos sem tocar em hp/arma/inventário/escudo/granadas/pontuação — diferente do reinício completo de partida (`preservePlayers: false`, via `resetMatch`/`startMatch`), que continua chamando `resetPlayer` pra todo mundo como antes. `registerZombieKill` (chamado nos 2 únicos pontos do arquivo onde um zumbi é removido: `applyDamage` e `explodeBomb`) incrementa o progresso do objetivo; `checkStageObjective` (chamado a cada tick a partir de `checkRoundEnd`, no lugar do antigo gatilho por cronômetro) avança pro próximo estágio ou, se era o último, chama `finishRound(room, 'campaignComplete')`. `scoreLimit` e o fim por battle royale continuam existindo como condições de fim alternativas — só o fim por `MATCH_SECONDS`/`matchEndsAt` foi removido, porque era exatamente o "modo cronometrado" que a campanha substitui.
+
+No cliente (`public/game.js`), um novo evento `stageChange` troca `world`/`resetExploredMask` e limpa entidades/corpos/sangue do estágio anterior sem recarregar a página; o HUD do `#timer` virou "ESTÁGIO N/M" e um `#objective` novo mostra o texto do objetivo (vindo de `snapshot.stage.objectiveLabel` a cada tick); o overlay de fim de partida (`#roundend`) é reaproveitado tal e qual para "campanha concluída", só trocando o título via `data.campaignComplete` no payload de `roundEnd`.
+
+Retoque visual incluído nesta rodada (sem asset novo): a "língua"/braço do zumbi-braço-esticável (`drawStretchTelegraph`) deixou de ser uma linha reta com gradiente vermelho e virou uma silhueta preenchida afinando da base pra ponta com leve ondulação, em tom de carne/rosa — lê como um apêndice orgânico, não como um laser. O retoque de "mesa desproporcional ao colisor" cotado no dossiê foi **investigado e descartado**: ao reconstruir como `bakeSprite`/`paintSprite` desenham o canvas (incluindo a margem transparente do "2.2×2.2"), o conteúdo visível real da mesa já ocupa só ~1.52 unidades de profundidade — perto o bastante do colisor de 1.55 pra não valer a pena mexer; a suposição original do dossiê (42% mais alta) não se sustentou numa inspeção mais de perto do código de bake.
+
+Fora de escopo (avisado, não decidido sozinho): troca dos ícones de arma/munição por um pacote com mais resolução — precisa de download de arquivo de terceiro (autorização explícita, possivelmente o mesmo passo manual do pacote Ittai Manero, já que itch.io tem download com sessão autenticada); e campanhas múltiplas/criadas por jogadores, que a arquitetura de dado por estágio já deixa possível mas não foi implementada.
+
+Validado num container Docker isolado desta worktree (porta livre, nome de projeto próprio, sem tocar no container do checkout principal já publicado): `npm run check` dentro do container, e uma campanha completa jogada via navegador com bots — estágio 1 até 12/12 eliminados, transição automática pra sala final, zumbi-tanque derrotado, tela "CAMPANHA CONCLUÍDA", "PRÓXIMA PARTIDA" reiniciando do estágio 1 do zero.

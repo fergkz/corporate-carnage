@@ -13,88 +13,131 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.get('/health', (_request, response) => response.json({ ok: true }));
 
 const TICK_RATE = 20;
-const MATCH_SECONDS = 180;
-const ARENA = 30; // mapa mais amplo — o escritório (paredes/móveis) continua no miolo original, sobra mais área aberta na borda
 const PLAYER_RADIUS = 0.46;
 
-// Retângulos colidem com jogadores, zumbis e tiros. Coordenadas em "metros" de mundo top-down.
-const walls = [
-  { x: -8.8, y: 0, w: 1.2, h: 11.5 },
-  { x: 8.8, y: 0, w: 1.2, h: 11.5 },
-  { x: 0, y: -9.2, w: 8, h: 1.1 },
-  { x: 0, y: 9.2, w: 8, h: 1.1 },
-  { x: -14.8, y: -10.8, w: 4.2, h: 1 },
-  { x: 14.8, y: 10.8, w: 4.2, h: 1 },
-  { x: -15, y: -6, w: 4.4, h: 1.55 },
-  { x: 15, y: -6, w: 4.4, h: 1.55 },
-  { x: -15, y: 6, w: 4.4, h: 1.55 },
-  { x: 15, y: 6, w: 4.4, h: 1.55 },
-  { x: -15, y: 15, w: 4.4, h: 1.55 },
-  { x: 15, y: -15, w: 4.4, h: 1.55 },
-  { x: 0, y: 0, w: 6.6, h: 5.2 },
-  { x: -14, y: 0, w: 3.6, h: 1.4 },
-  { x: 14, y: 0, w: 3.6, h: 1.4 },
-  { x: 0, y: 15, w: 5, h: 4 },
-  { x: -20, y: -7, w: 1.2, h: 5 },
-  { x: 20, y: 7, w: 1.2, h: 5 },
-  { x: -4, y: 19, w: 2, h: 1 },
-  { x: 4, y: 19, w: 2, h: 1 },
+// Uma campanha é uma sequência de estágios. Cada estágio carrega seu próprio
+// layout (walls colidem, props são só decoração enviada ao cliente), sua
+// piscina de posições de pickup, seus pontos de spawn e um objetivo — quando
+// o objetivo é cumprido, `applyStage()` avança pro próximo (ou encerra a
+// campanha, se for o último). Tudo isso costumava ser `walls`/`props`/`ARENA`/
+// `PICKUP_SPAWN_POOL` como constantes globais únicas; virou dado por estágio
+// pra dar pra ter mais de um.
+const STAGES = [
+  {
+    id: 'escritorio',
+    name: 'Contenção Executiva',
+    arena: 30, // mapa mais amplo — o escritório (paredes/móveis) continua no miolo original, sobra mais área aberta na borda
+    // Retângulos colidem com jogadores, zumbis e tiros. Coordenadas em "metros" de mundo top-down.
+    walls: [
+      { x: -8.8, y: 0, w: 1.2, h: 11.5 },
+      { x: 8.8, y: 0, w: 1.2, h: 11.5 },
+      { x: 0, y: -9.2, w: 8, h: 1.1 },
+      { x: 0, y: 9.2, w: 8, h: 1.1 },
+      { x: -14.8, y: -10.8, w: 4.2, h: 1 },
+      { x: 14.8, y: 10.8, w: 4.2, h: 1 },
+      { x: -15, y: -6, w: 4.4, h: 1.55 },
+      { x: 15, y: -6, w: 4.4, h: 1.55 },
+      { x: -15, y: 6, w: 4.4, h: 1.55 },
+      { x: 15, y: 6, w: 4.4, h: 1.55 },
+      { x: -15, y: 15, w: 4.4, h: 1.55 },
+      { x: 15, y: -15, w: 4.4, h: 1.55 },
+      { x: 0, y: 0, w: 6.6, h: 5.2 },
+      { x: -14, y: 0, w: 3.6, h: 1.4 },
+      { x: 14, y: 0, w: 3.6, h: 1.4 },
+      { x: 0, y: 15, w: 5, h: 4 },
+      { x: -20, y: -7, w: 1.2, h: 5 },
+      { x: 20, y: 7, w: 1.2, h: 5 },
+      { x: -4, y: 19, w: 2, h: 1 },
+      { x: 4, y: 19, w: 2, h: 1 },
 
-  // Sala de servidores (bolsão livre a sudoeste do centro, porta aberta a leste)
-  { x: -6, y: 6.6, w: 6.4, h: 0.5 },
-  { x: -8.8, y: 9.8, w: 0.5, h: 6.4 },
-  { x: -6, y: 13, w: 6.4, h: 0.5 },
+      // Sala de servidores (bolsão livre a sudoeste do centro, porta aberta a leste)
+      { x: -6, y: 6.6, w: 6.4, h: 0.5 },
+      { x: -8.8, y: 9.8, w: 0.5, h: 6.4 },
+      { x: -6, y: 13, w: 6.4, h: 0.5 },
 
-  // Copa (bolsão livre a nordeste do centro, porta aberta ao sul)
-  { x: 5.2, y: -8.5, w: 0.5, h: 11.2 },
-  { x: 8, y: -14, w: 6, h: 0.5 },
-  { x: 10.8, y: -8.5, w: 0.5, h: 11.2 },
+      // Copa (bolsão livre a nordeste do centro, porta aberta ao sul)
+      { x: 5.2, y: -8.5, w: 0.5, h: 11.2 },
+      { x: 8, y: -14, w: 6, h: 0.5 },
+      { x: 10.8, y: -8.5, w: 0.5, h: 11.2 },
 
-  // Divisórias extras no salão aberto, para partir a linha de visão
-  { x: -6, y: -7.6, w: 2, h: 0.3 },
-  { x: 6, y: 7.6, w: 2, h: 0.3 },
-  { x: -6.5, y: -6.8, w: 0.3, h: 2 },
-  { x: 6.5, y: 6.8, w: 0.3, h: 2 },
-];
-
-// Apenas decoração enviada ao cliente para desenhar o escritório; não colide.
-const props = [
-  { type: 'reception', x: 0, y: 0, w: 6.6, h: 5.2 },
-  { type: 'desk', x: -15, y: -6, rot: 0 },
-  { type: 'desk', x: -12.6, y: -6.6, rot: 0 },
-  { type: 'desk', x: 15, y: -6, rot: Math.PI },
-  { type: 'desk', x: 12.6, y: -5.4, rot: Math.PI },
-  { type: 'desk', x: -15, y: 6, rot: Math.PI },
-  { type: 'desk', x: -12.6, y: 5.4, rot: Math.PI },
-  { type: 'desk', x: 15, y: 6, rot: 0 },
-  { type: 'desk', x: 12.6, y: 6.6, rot: 0 },
-  { type: 'desk', x: -15, y: 15, rot: 0 },
-  { type: 'desk', x: -12.6, y: 14.4, rot: 0 },
-  { type: 'desk', x: 15, y: -15, rot: Math.PI },
-  { type: 'desk', x: 12.6, y: -15.6, rot: Math.PI },
-  { type: 'plant', x: -19, y: -18 },
-  { type: 'plant', x: 19, y: -18 },
-  { type: 'plant', x: -19, y: 18 },
-  { type: 'plant', x: 19, y: 18 },
-  { type: 'plant', x: -5, y: -16 },
-  { type: 'plant', x: 5, y: 16 },
-  { type: 'plant', x: -9.2, y: 12.4 },
-  { type: 'plant', x: 6.4, y: -3.2 },
-  { type: 'sofa', x: -14, y: 0 },
-  { type: 'sofa', x: 14, y: 0 },
-  { type: 'table', x: 0, y: 15, w: 5, h: 2 },
-  { type: 'cabinet', x: -20, y: -7 },
-  { type: 'cabinet', x: 20, y: 7 },
-  { type: 'vending', x: -4, y: 19 },
-  { type: 'vending', x: 4, y: 19 },
-  { type: 'whiteboard', x: -3.4, y: -8.9, rot: 0 },
-  { type: 'server_rack', x: -7.6, y: 8.1, rot: 0 },
-  { type: 'server_rack', x: -7.6, y: 10, rot: 0 },
-  { type: 'server_rack', x: -7.6, y: 11.9, rot: 0 },
-  { type: 'break_table', x: 8, y: -6.4 },
-  { type: 'water_cooler', x: 9.6, y: -11.2 },
-  { type: 'vending', x: 6.4, y: -11.4 },
-  { type: 'sign', x: 0, y: -21.6, text: 'HELIX DYNAMICS' },
+      // Divisórias extras no salão aberto, para partir a linha de visão
+      { x: -6, y: -7.6, w: 2, h: 0.3 },
+      { x: 6, y: 7.6, w: 2, h: 0.3 },
+      { x: -6.5, y: -6.8, w: 0.3, h: 2 },
+      { x: 6.5, y: 6.8, w: 0.3, h: 2 },
+    ],
+    // Apenas decoração enviada ao cliente para desenhar o escritório; não colide.
+    props: [
+      { type: 'reception', x: 0, y: 0, w: 6.6, h: 5.2 },
+      { type: 'desk', x: -15, y: -6, rot: 0 },
+      { type: 'desk', x: -12.6, y: -6.6, rot: 0 },
+      { type: 'desk', x: 15, y: -6, rot: Math.PI },
+      { type: 'desk', x: 12.6, y: -5.4, rot: Math.PI },
+      { type: 'desk', x: -15, y: 6, rot: Math.PI },
+      { type: 'desk', x: -12.6, y: 5.4, rot: Math.PI },
+      { type: 'desk', x: 15, y: 6, rot: 0 },
+      { type: 'desk', x: 12.6, y: 6.6, rot: 0 },
+      { type: 'desk', x: -15, y: 15, rot: 0 },
+      { type: 'desk', x: -12.6, y: 14.4, rot: 0 },
+      { type: 'desk', x: 15, y: -15, rot: Math.PI },
+      { type: 'desk', x: 12.6, y: -15.6, rot: Math.PI },
+      { type: 'plant', x: -19, y: -18 },
+      { type: 'plant', x: 19, y: -18 },
+      { type: 'plant', x: -19, y: 18 },
+      { type: 'plant', x: 19, y: 18 },
+      { type: 'plant', x: -5, y: -16 },
+      { type: 'plant', x: 5, y: 16 },
+      { type: 'plant', x: -9.2, y: 12.4 },
+      { type: 'plant', x: 6.4, y: -3.2 },
+      { type: 'sofa', x: -14, y: 0 },
+      { type: 'sofa', x: 14, y: 0 },
+      { type: 'table', x: 0, y: 15, w: 5, h: 2 },
+      { type: 'cabinet', x: -20, y: -7 },
+      { type: 'cabinet', x: 20, y: 7 },
+      { type: 'vending', x: -4, y: 19 },
+      { type: 'vending', x: 4, y: 19 },
+      { type: 'whiteboard', x: -3.4, y: -8.9, rot: 0 },
+      { type: 'server_rack', x: -7.6, y: 8.1, rot: 0 },
+      { type: 'server_rack', x: -7.6, y: 10, rot: 0 },
+      { type: 'server_rack', x: -7.6, y: 11.9, rot: 0 },
+      { type: 'break_table', x: 8, y: -6.4 },
+      { type: 'water_cooler', x: 9.6, y: -11.2 },
+      { type: 'vending', x: 6.4, y: -11.4 },
+      { type: 'sign', x: 0, y: -21.6, text: 'HELIX DYNAMICS' },
+    ],
+    pickupSpawnPool: [
+      [-6, -4], [6, 4], [0, -15], [-17, 0], [17, 0], [-13, -15], [13, 15], [7, 15],
+      [0, 6.3], [10, 0], [-10, 0], [0, -6.3], [-9.5, 15.5],
+      [-4, -11], [4, 11], [-11, 4], [16, -3], [-16, 3], [11, 4],
+    ],
+    spawnPoints: [[-17, -16], [17, 16], [-18.5, 16], [18.5, -16], [7, 18], [-7, -18]],
+    // Alvo escala com o tanto de zumbi configurado pra sala, pra continuar
+    // fazendo sentido em salas com zombieBaseCount bem diferente de 14.
+    objective: (room) => ({ type: 'eliminate', target: Math.max(10, room.config.zombieBaseCount + 6) }),
+  },
+  {
+    id: 'sala_final',
+    name: 'Sala de Reunião — Confronto Final',
+    arena: 16,
+    walls: [
+      { x: 0, y: 0, w: 6, h: 2.6 }, // mesa de reunião central, usada como cobertura
+      { x: -9, y: -9, w: 1.2, h: 1.2 },
+      { x: 9, y: -9, w: 1.2, h: 1.2 },
+      { x: -9, y: 9, w: 1.2, h: 1.2 },
+      { x: 9, y: 9, w: 1.2, h: 1.2 },
+    ],
+    props: [
+      { type: 'table', x: 0, y: 0, w: 6, h: 2.6 },
+      { type: 'plant', x: -9, y: -9 },
+      { type: 'plant', x: 9, y: -9 },
+      { type: 'plant', x: -9, y: 9 },
+      { type: 'plant', x: 9, y: 9 },
+      { type: 'sign', x: 0, y: -14.6, text: 'CONFRONTO FINAL' },
+    ],
+    pickupSpawnPool: [[-6, -6], [6, 6], [-6, 6], [6, -6], [0, 7], [0, -7]],
+    spawnPoints: [[-13, -12], [13, 12], [-13, 12], [13, -12]],
+    objective: () => ({ type: 'boss_kill', zombieTypeId: 'tank' }),
+  },
 ];
 
 const weapons = {
@@ -167,12 +210,6 @@ const EVOLUTION_BATCH_BASE = 2;
 const EVOLUTION_BATCH_MAX = 5;
 const EVOLUTION_CAP_MULTIPLIER = 2.5;
 
-const PICKUP_SPAWN_POOL = [
-  [-6, -4], [6, 4], [0, -15], [-17, 0], [17, 0], [-13, -15], [13, 15], [7, 15],
-  [0, 6.3], [10, 0], [-10, 0], [0, -6.3], [-9.5, 15.5],
-  [-4, -11], [4, 11], [-11, 4], [16, -3], [-16, 3], [11, 4],
-];
-
 const pickupTemplates = [
   { id: 'wp-pistol', kind: 'weapon', weapon: 'pistol', amount: 24 },
   { id: 'wp-rifle', kind: 'weapon', weapon: 'rifle', amount: 45 },
@@ -231,26 +268,27 @@ function generateRoomCode() {
   return code;
 }
 
-function collides(x, y, radius = PLAYER_RADIUS) {
-  if (x < -ARENA + radius || x > ARENA - radius || y < -ARENA + radius || y > ARENA - radius) return true;
-  return walls.some((wall) =>
+function collides(room, x, y, radius = PLAYER_RADIUS) {
+  const arena = room.arena;
+  if (x < -arena + radius || x > arena - radius || y < -arena + radius || y > arena - radius) return true;
+  return room.walls.some((wall) =>
     x > wall.x - wall.w / 2 - radius && x < wall.x + wall.w / 2 + radius &&
     y > wall.y - wall.h / 2 - radius && y < wall.y + wall.h / 2 + radius
   );
 }
 
-function moveWithCollision(entity, dx, dy, radius = PLAYER_RADIUS) {
+function moveWithCollision(room, entity, dx, dy, radius = PLAYER_RADIUS) {
   const nextX = entity.x + dx;
-  if (!collides(nextX, entity.y, radius)) entity.x = nextX;
+  if (!collides(room, nextX, entity.y, radius)) entity.x = nextX;
   const nextY = entity.y + dy;
-  if (!collides(entity.x, nextY, radius)) entity.y = nextY;
+  if (!collides(room, entity.x, nextY, radius)) entity.y = nextY;
 }
 
-function spawnPoint() {
-  const points = [[-17, -16], [17, 16], [-18.5, 16], [18.5, -16], [7, 18], [-7, -18]];
+function spawnPoint(room) {
+  const points = room.spawnPoints;
   let [x, y] = points[Math.floor(Math.random() * points.length)];
   let attempts = 0;
-  while (collides(x, y) && attempts < 12) {
+  while (collides(room, x, y) && attempts < 12) {
     x += x < 0 ? -0.4 : 0.4;
     y += y < 0 ? -0.4 : 0.4;
     attempts += 1;
@@ -264,10 +302,11 @@ function randomPickupPosition(room, exclude) {
       .filter((pickup) => pickup.active && pickup !== exclude)
       .map((pickup) => `${pickup.x},${pickup.y}`)
   );
-  let choice = PICKUP_SPAWN_POOL[Math.floor(Math.random() * PICKUP_SPAWN_POOL.length)];
+  const pool = room.pickupSpawnPool;
+  let choice = pool[Math.floor(Math.random() * pool.length)];
   let attempts = 0;
   while (taken.has(`${choice[0]},${choice[1]}`) && attempts < 20) {
-    choice = PICKUP_SPAWN_POOL[Math.floor(Math.random() * PICKUP_SPAWN_POOL.length)];
+    choice = pool[Math.floor(Math.random() * pool.length)];
     attempts += 1;
   }
   return choice;
@@ -340,8 +379,8 @@ function makePlayer(id, name, extra = {}) {
   };
 }
 
-function resetPlayer(player, preserveScore = true) {
-  const [x, y] = spawnPoint();
+function resetPlayer(room, player, preserveScore = true) {
+  const [x, y] = spawnPoint(room);
   Object.assign(player, {
     x, y, angle: 0, hp: 100, shield: 0, grenades: 0, alive: true, invulnerableUntil: Date.now() + 1800,
     weapon: 'knife', inventory: ['knife'], ammo: 0,
@@ -364,7 +403,7 @@ function spawnSingleBot(room, index) {
       nextSteerAt: 0, steerAngle: 0, targetAcquiredAt: 0,
     },
   });
-  resetPlayer(bot, false);
+  resetPlayer(room, bot, false);
   bot.alive = false;
   bot.ready = true;
   room.players.set(id, bot);
@@ -417,7 +456,6 @@ function buildRoom(hostSocket, config, hostName) {
     projectiles: new Map(),
     hazards: new Map(),
     pickups: new Map(),
-    matchEndsAt: 0,
     zombieSequence: 0,
     projectileSequence: 0,
     hazardSequence: 0,
@@ -426,6 +464,16 @@ function buildRoom(hostSocket, config, hostName) {
     createdAt: Date.now(),
     emptySince: null,
     tickHandle: null,
+    // Campos de estágio (campanha) — inicializados com o estágio 0 aqui pra
+    // já existir algo válido pra desenhar/colidir enquanto a sala ainda está
+    // no lobby; `applyStage` reatribui isso quando a partida começa de verdade.
+    stageIndex: 0,
+    walls: STAGES[0].walls,
+    props: STAGES[0].props,
+    arena: STAGES[0].arena,
+    pickupSpawnPool: STAGES[0].pickupSpawnPool,
+    spawnPoints: STAGES[0].spawnPoints,
+    stageProgress: null,
   };
   room.config.npcCount = Math.min(room.config.npcCount, Math.max(0, room.config.maxPlayers - 1));
   seedPickups(room);
@@ -440,13 +488,13 @@ function joinRoomSocket(socket, room, name) {
   socket.join(room.id);
   socketRoom.set(socket.id, room.id);
   const player = makePlayer(socket.id, name, {});
-  resetPlayer(player, false);
+  resetPlayer(room, player, false);
   player.alive = false;
   player.ready = true;
   room.players.set(socket.id, player);
   room.emptySince = null;
   socket.emit('welcome', {
-    id: socket.id, walls, props, arena: ARENA, roomId: room.id, code: room.code,
+    id: socket.id, walls: room.walls, props: room.props, arena: room.arena, roomId: room.id, code: room.code,
     isHost: room.hostId === socket.id, settings: room.config,
   });
   io.to(room.id).emit('lobbyUpdate', lobbyPayload(room));
@@ -505,28 +553,77 @@ function returnToLobby(room) {
   broadcastRoomListIfPublic(room);
 }
 
-function resetMatch(room) {
-  room.matchEndsAt = Date.now() + MATCH_SECONDS * 1000;
+// Texto de progresso do objetivo do estágio atual, reaproveitado no banner
+// de anúncio e no `stage` mandado a cada snapshot pro HUD.
+function describeObjective(progress) {
+  if (!progress) return '';
+  if (progress.type === 'eliminate') return `Eliminar infectados — ${progress.count}/${progress.target}`;
+  if (progress.type === 'boss_kill') return progress.bossDead ? 'Ameaça neutralizada' : 'Derrotar o zumbi-tanque';
+  return '';
+}
+
+// Carrega o estágio `stageIndex` da campanha na sala: troca layout/pickups/
+// zumbis e (re)posiciona jogadores. `preservePlayers: true` é a transição
+// "de verdade" entre estágios (mantém arma/munição/vida/escudo/granadas/
+// pontuação, só reposiciona); `preservePlayers: false` é início de partida
+// (reset completo, igual ao antigo `resetMatch`).
+function applyStage(room, stageIndex, { preservePlayers }) {
+  const stage = STAGES[stageIndex];
+  room.stageIndex = stageIndex;
+  room.walls = stage.walls;
+  room.props = stage.props;
+  room.arena = stage.arena;
+  room.pickupSpawnPool = stage.pickupSpawnPool;
+  room.spawnPoints = stage.spawnPoints;
+
   room.zombies.clear();
   room.projectiles.clear();
   room.hazards.clear();
+
   for (const [id, pickup] of room.pickups) {
     if (pickup.loot) { room.pickups.delete(id); continue; }
     const [x, y] = randomPickupPosition(room, pickup);
     Object.assign(pickup, { x, y, active: true, respawnAt: 0 });
   }
-  for (let i = 0; i < room.config.zombieBaseCount; i += 1) spawnZombie(room);
+
+  const objective = stage.objective(room);
+  if (objective.type === 'boss_kill') {
+    const boss = spawnZombie(room, { forceTypeId: objective.zombieTypeId });
+    boss.isBoss = true;
+    for (let i = 0; i < 5; i += 1) spawnZombie(room);
+    room.stageProgress = { type: 'boss_kill', bossId: boss.id, bossDead: false };
+  } else {
+    for (let i = 0; i < room.config.zombieBaseCount; i += 1) spawnZombie(room);
+    room.stageProgress = { type: 'eliminate', target: objective.target, count: 0 };
+  }
+
   room.evolutionState = {
     nextSpawnAt: Date.now() + EVOLUTION_INTERVAL_MS,
     batchSize: EVOLUTION_BATCH_BASE,
     currentCap: Math.max(room.config.zombieBaseCount, 1) * EVOLUTION_CAP_MULTIPLIER,
     waveIndex: 0,
   };
+
   for (const player of room.players.values()) {
-    resetPlayer(player, false);
-    player.wantsNextRound = false;
+    if (preservePlayers) {
+      if (!player.alive) continue; // jogador morto segue o fluxo normal de respawn
+      const [x, y] = spawnPoint(room);
+      Object.assign(player, { x, y, invulnerableUntil: Date.now() + 1800 });
+    } else {
+      resetPlayer(room, player, false);
+      player.wantsNextRound = false;
+    }
   }
-  io.to(room.id).emit('announcement', { title: 'NOVA RODADA', subtitle: 'Sobreviva. Supere. Domine.' });
+
+  io.to(room.id).emit('stageChange', {
+    walls: room.walls, props: room.props, arena: room.arena,
+    stageIndex, stageCount: STAGES.length, stageName: stage.name,
+  });
+  io.to(room.id).emit('announcement', { title: stage.name.toUpperCase(), subtitle: describeObjective(room.stageProgress) });
+}
+
+function resetMatch(room) {
+  applyStage(room, 0, { preservePlayers: false });
 }
 
 function startMatch(room) {
@@ -626,7 +723,7 @@ function killPlayer(room, target, attacker) {
   if (room.config.lifeMode === 'respawn') {
     setTimeout(() => {
       if (!roomAlive(room) || room.state !== 'playing') return;
-      if (room.players.has(target.id)) resetPlayer(target, true);
+      if (room.players.has(target.id)) resetPlayer(room, target, true);
     }, 2200);
   }
 }
@@ -663,6 +760,16 @@ function grantZombieKillReward(attacker, type) {
   if (Math.random() < specialChance) grantRandomSpecial(attacker, now);
 }
 
+// Único gatilho de progresso de objetivo de estágio — os 2 pontos do arquivo
+// onde um zumbi é removido (aqui e em `explodeBomb`) chamam isso logo após
+// o `delete`.
+function registerZombieKill(room, zombie) {
+  const progress = room.stageProgress;
+  if (!progress) return;
+  if (progress.type === 'eliminate') progress.count += 1;
+  else if (progress.type === 'boss_kill' && zombie.id === progress.bossId) progress.bossDead = true;
+}
+
 function applyDamage(room, target, damage, attacker, isZombieTarget) {
   if (target.hp <= 0 || (!isZombieTarget && Date.now() < target.invulnerableUntil)) return false;
   const reduction = isZombieTarget ? (ZOMBIE_TYPES_BY_ID[target.typeId]?.damageReduction || 0) : 0;
@@ -671,6 +778,7 @@ function applyDamage(room, target, damage, attacker, isZombieTarget) {
   if (isZombieTarget) {
     const type = ZOMBIE_TYPES_BY_ID[target.typeId];
     room.zombies.delete(target.id);
+    registerZombieKill(room, target);
     if (attacker) {
       attacker.score += 1;
       grantZombieKillReward(attacker, type);
@@ -715,7 +823,7 @@ function handleShot(room, player, data) {
     const dirX = Math.cos(angle);
     const dirY = Math.sin(angle);
     let closest = { distance: weapon.range, target: null, zombie: false };
-    for (const wall of walls) {
+    for (const wall of room.walls) {
       const distance = rayBox(player.x, player.y, dirX, dirY, wall);
       if (distance !== null && distance < closest.distance) closest.distance = distance;
     }
@@ -735,7 +843,7 @@ function handleShot(room, player, data) {
       applyDamage(room, closest.target, weapon.damage, player, closest.zombie);
       if (weapon.melee) {
         const radius = closest.zombie ? (closest.target.radius || 0.48) : PLAYER_RADIUS;
-        moveWithCollision(closest.target, dirX * KNIFE_KNOCKBACK, dirY * KNIFE_KNOCKBACK, radius);
+        moveWithCollision(room, closest.target, dirX * KNIFE_KNOCKBACK, dirY * KNIFE_KNOCKBACK, radius);
       }
     }
     impacts.push({ x: player.x + dirX * closest.distance, y: player.y + dirY * closest.distance });
@@ -832,7 +940,7 @@ function handleGrenade(room, player, data) {
   const dirY = Math.sin(angle);
   const requested = Number.isFinite(data?.distance) ? data.distance : GRENADE_RANGE;
   let distance = Math.min(GRENADE_RANGE, Math.max(GRENADE_MIN_RANGE, requested));
-  for (const wall of walls) {
+  for (const wall of room.walls) {
     const hit = rayBox(player.x, player.y, dirX, dirY, wall);
     if (hit !== null && hit < distance) distance = hit;
   }
@@ -844,26 +952,28 @@ function handleFireIntent(room, player, data) {
   else handleShot(room, player, data);
 }
 
-function spawnZombie(room) {
-  const type = pickZombieType();
+function spawnZombie(room, opts = {}) {
+  const type = (opts.forceTypeId && ZOMBIE_TYPES_BY_ID[opts.forceTypeId]) || pickZombieType();
   let x;
   let y;
   do {
     const edge = Math.floor(Math.random() * 4);
-    const edgeOffset = ARENA - 2;
-    const span = (ARENA - 3) * 2;
-    const value = -(ARENA - 3) + Math.random() * span;
+    const edgeOffset = room.arena - 2;
+    const span = (room.arena - 3) * 2;
+    const value = -(room.arena - 3) + Math.random() * span;
     [x, y] = edge === 0 ? [-edgeOffset, value] : edge === 1 ? [edgeOffset, value] : edge === 2 ? [value, -edgeOffset] : [value, edgeOffset];
-  } while (collides(x, y, type.radius));
+  } while (collides(room, x, y, type.radius));
   const id = `z${++room.zombieSequence}`;
   const [minSpeed, maxSpeed] = type.speed || [1.45, 2.0];
-  room.zombies.set(id, {
+  const zombie = {
     id, x, y, angle: 0, hp: type.hp, speed: minSpeed + Math.random() * (maxSpeed - minSpeed), attackAt: 0,
     typeId: type.id, radius: type.radius, wanderAngle: Math.random() * Math.PI * 2, thinkAt: 0,
     forcedTargetId: null, forcedUntil: 0, fuseAt: 0,
     stretchPhase: type.special === 'stretch' ? 'idle' : null, phaseAt: 0, grabTargetId: null,
     nextRangedAttackAt: 0,
-  });
+  };
+  room.zombies.set(id, zombie);
+  return zombie;
 }
 
 function explodeBomb(room, zombie, type) {
@@ -874,10 +984,11 @@ function explodeBomb(room, zombie, type) {
     applyDamage(room, player, type.damage, null, false);
   }
   room.zombies.delete(zombie.id);
+  registerZombieKill(room, zombie);
   scheduleZombieRespawn(room);
 }
 
-function chooseSteeringAngle(entity, goalX, goalY, avoidList, avoidRadius, radius) {
+function chooseSteeringAngle(room, entity, goalX, goalY, avoidList, avoidRadius, radius) {
   const desired = Math.atan2(goalY - entity.y, goalX - entity.x);
   const candidates = [0, .35, -.35, .7, -.7, 1.05, -1.05, 1.4, -1.4, Math.PI];
   let best = { score: -Infinity, angle: desired };
@@ -885,7 +996,7 @@ function chooseSteeringAngle(entity, goalX, goalY, avoidList, avoidRadius, radiu
     const angle = desired + offset;
     const probeX = entity.x + Math.cos(angle) * 1.15;
     const probeY = entity.y + Math.sin(angle) * 1.15;
-    if (collides(probeX, probeY, radius)) continue;
+    if (collides(room, probeX, probeY, radius)) continue;
     let separation = 0;
     for (const other of avoidList) {
       if (other.id === entity.id) continue;
@@ -901,7 +1012,7 @@ function chooseSteeringAngle(entity, goalX, goalY, avoidList, avoidRadius, radiu
 function zombieDirection(room, zombie, target, now) {
   if (now < zombie.thinkAt) return zombie.wanderAngle;
   zombie.thinkAt = now + 320 + Math.random() * 220;
-  zombie.wanderAngle = chooseSteeringAngle(zombie, target.x, target.y, [...room.zombies.values()], 1.2, zombie.radius || 0.48);
+  zombie.wanderAngle = chooseSteeringAngle(room, zombie, target.x, target.y, [...room.zombies.values()], 1.2, zombie.radius || 0.48);
   return zombie.wanderAngle;
 }
 
@@ -957,7 +1068,7 @@ function runStretchLogic(room, zombie, type, target, now, dt) {
     }
     const angle = Math.atan2(zombie.y - grabbed.y, zombie.x - grabbed.x);
     const step = Math.min(type.pullSpeed * dt, distance - type.pullLandingDistance);
-    moveWithCollision(grabbed, Math.cos(angle) * step, Math.sin(angle) * step, PLAYER_RADIUS);
+    moveWithCollision(room, grabbed, Math.cos(angle) * step, Math.sin(angle) * step, PLAYER_RADIUS);
     return;
   }
   if (zombie.stretchPhase === 'recover') {
@@ -1023,7 +1134,7 @@ function updateZombies(room, now, dt) {
       if (distanceToPlayer > 0 && distanceToPlayer < REPEL_RADIUS) {
         const pushAngle = Math.atan2(zombie.y - player.y, zombie.x - player.x);
         const pushSpeed = zombie.speed * 1.4 * dt;
-        moveWithCollision(zombie, Math.cos(pushAngle) * pushSpeed, Math.sin(pushAngle) * pushSpeed, zombie.radius);
+        moveWithCollision(room, zombie, Math.cos(pushAngle) * pushSpeed, Math.sin(pushAngle) * pushSpeed, zombie.radius);
       }
     }
 
@@ -1035,7 +1146,7 @@ function updateZombies(room, now, dt) {
       }
       const wanderSpeed = zombie.speed * 0.35 * dt;
       zombie.angle = zombie.wanderAngle;
-      moveWithCollision(zombie, Math.cos(zombie.wanderAngle) * wanderSpeed, Math.sin(zombie.wanderAngle) * wanderSpeed, zombie.radius);
+      moveWithCollision(room, zombie, Math.cos(zombie.wanderAngle) * wanderSpeed, Math.sin(zombie.wanderAngle) * wanderSpeed, zombie.radius);
       continue;
     }
 
@@ -1051,7 +1162,7 @@ function updateZombies(room, now, dt) {
         const speed = zombie.speed * dt;
         const direction = zombieDirection(room, zombie, target, now);
         zombie.angle = direction;
-        moveWithCollision(zombie, Math.cos(direction) * speed, Math.sin(direction) * speed, zombie.radius);
+        moveWithCollision(room, zombie, Math.cos(direction) * speed, Math.sin(direction) * speed, zombie.radius);
       } else {
         runAcidLogic(room, zombie, type, target, now);
       }
@@ -1065,7 +1176,7 @@ function updateZombies(room, now, dt) {
         const speed = zombie.speed * dt;
         const direction = zombieDirection(room, zombie, target, now);
         zombie.angle = direction;
-        moveWithCollision(zombie, Math.cos(direction) * speed, Math.sin(direction) * speed, zombie.radius);
+        moveWithCollision(room, zombie, Math.cos(direction) * speed, Math.sin(direction) * speed, zombie.radius);
         continue;
       }
       runScreamLogic(room, zombie, type, target, now);
@@ -1079,13 +1190,13 @@ function updateZombies(room, now, dt) {
         zombie.nextRangedAttackAt = now + (type.leapCooldownMs || 3000);
         zombie.angle = Math.atan2(target.y - zombie.y, target.x - zombie.x);
         const dashDist = Math.min(distance - engageRange * 0.6, 2.6);
-        moveWithCollision(zombie, Math.cos(zombie.angle) * dashDist, Math.sin(zombie.angle) * dashDist, zombie.radius);
+        moveWithCollision(room, zombie, Math.cos(zombie.angle) * dashDist, Math.sin(zombie.angle) * dashDist, zombie.radius);
         continue;
       }
       const speed = zombie.speed * dt;
       const direction = zombieDirection(room, zombie, target, now);
       zombie.angle = direction;
-      moveWithCollision(zombie, Math.cos(direction) * speed, Math.sin(direction) * speed, zombie.radius);
+      moveWithCollision(room, zombie, Math.cos(direction) * speed, Math.sin(direction) * speed, zombie.radius);
       continue;
     }
 
@@ -1164,7 +1275,7 @@ function updateRocket(room, proj, now, dt) {
   const nextX = proj.x + Math.cos(proj.angle) * step;
   const nextY = proj.y + Math.sin(proj.angle) * step;
   proj.traveled += step;
-  if (collides(nextX, nextY, 0.2)) { explodeRocket(room, proj, proj.x, proj.y); room.projectiles.delete(proj.id); return; }
+  if (collides(room, nextX, nextY, 0.2)) { explodeRocket(room, proj, proj.x, proj.y); room.projectiles.delete(proj.id); return; }
   proj.x = nextX;
   proj.y = nextY;
   if (liveTarget && Math.hypot(liveTarget.x - proj.x, liveTarget.y - proj.y) <= 0.6) {
@@ -1184,7 +1295,7 @@ function updateProjectiles(room, now, dt) {
     const step = proj.speed * dt;
     const nextX = proj.x + proj.dirX * step;
     const nextY = proj.y + proj.dirY * step;
-    if (collides(nextX, nextY, 0.15)) { room.projectiles.delete(proj.id); continue; }
+    if (collides(room, nextX, nextY, 0.15)) { room.projectiles.delete(proj.id); continue; }
     proj.traveled += step;
     if (proj.traveled > proj.range) { room.projectiles.delete(proj.id); continue; }
     proj.x = nextX;
@@ -1248,30 +1359,49 @@ function updateEvolutionSpawns(room, now) {
 function finishRound(room, reason) {
   const ranked = [...room.players.values()].filter((player) => player.ready).sort((a, b) => b.score - a.score);
   const winner = ranked[0];
-  const title = reason === 'wipe' ? 'EQUIPE ELIMINADA' : winner ? `${winner.name.toUpperCase()} VENCEU` : 'FIM DA RODADA';
+  const title = reason === 'wipe' ? 'EQUIPE ELIMINADA'
+    : reason === 'campaignComplete' ? 'CAMPANHA CONCLUÍDA'
+    : winner ? `${winner.name.toUpperCase()} VENCEU` : 'FIM DA RODADA';
   io.to(room.id).emit('announcement', { title, subtitle: winner ? `${winner.score} pontos` : 'Aguardando agentes' });
-  io.to(room.id).emit('roundEnd', { scores: ranked.map(({ id, name, score, kills, deaths }) => ({ id, name, score, kills, deaths })) });
+  io.to(room.id).emit('roundEnd', {
+    scores: ranked.map(({ id, name, score, kills, deaths }) => ({ id, name, score, kills, deaths })),
+    campaignComplete: reason === 'campaignComplete',
+  });
   room.state = 'roundEnd';
 }
 
+// Substitui o antigo estágio da campanha pelo próximo quando o objetivo do
+// estágio atual é cumprido; encerra a campanha (finishRound) se era o último.
+function checkStageObjective(room, now) {
+  const progress = room.stageProgress;
+  if (!progress) return;
+  const done = progress.type === 'eliminate' ? progress.count >= progress.target : progress.bossDead;
+  if (!done) return;
+  if (room.stageIndex + 1 < STAGES.length) {
+    applyStage(room, room.stageIndex + 1, { preservePlayers: true });
+  } else {
+    finishRound(room, 'campaignComplete');
+  }
+}
+
+// Condições de fim de partida que não vêm de objetivo de estágio (continuam
+// existindo como antes): limite de pontuação e battle royale. O antigo fim
+// por cronômetro (MATCH_SECONDS/matchEndsAt) foi removido — quem encerra a
+// campanha agora é o objetivo do último estágio, via checkStageObjective.
 function checkRoundEnd(room, now) {
-  let ended = false;
-  let reason = 'timer';
-  if (now >= room.matchEndsAt) {
-    ended = true;
-  } else if (room.config.scoreLimit > 0 && [...room.players.values()].some((p) => p.ready && p.score >= room.config.scoreLimit)) {
-    ended = true;
-    reason = 'score';
-  } else if (room.config.lifeMode === 'battleRoyale') {
+  if (room.config.scoreLimit > 0 && [...room.players.values()].some((p) => p.ready && p.score >= room.config.scoreLimit)) {
+    finishRound(room, 'score');
+    return;
+  }
+  if (room.config.lifeMode === 'battleRoyale') {
     const humans = [...room.players.values()].filter((p) => p.ready);
     if (humans.length > 1) {
       const living = humans.filter((p) => p.alive);
-      if (room.config.mode === 'versus' && living.length <= 1) { ended = true; reason = 'lastStanding'; }
-      else if (room.config.mode === 'coop' && living.length === 0) { ended = true; reason = 'wipe'; }
+      if (room.config.mode === 'versus' && living.length <= 1) { finishRound(room, 'lastStanding'); return; }
+      if (room.config.mode === 'coop' && living.length === 0) { finishRound(room, 'wipe'); return; }
     }
   }
-  if (!ended) return;
-  finishRound(room, reason);
+  checkStageObjective(room, now);
 }
 
 // Dificuldades bem mais brandas do que a primeira versão — a "baixa" reage
@@ -1383,7 +1513,7 @@ function executeBotAction(room, bot, tuning, now) {
     if (now >= bot.botState.nextSteerAt) {
       bot.botState.nextSteerAt = now + 150 + Math.random() * 100;
       const avoid = [...room.players.values(), ...room.zombies.values()].filter((entity) => entity.id !== bot.id);
-      bot.botState.steerAngle = chooseSteeringAngle(bot, goal.x, goal.y, avoid, 1.0, PLAYER_RADIUS);
+      bot.botState.steerAngle = chooseSteeringAngle(room, bot, goal.x, goal.y, avoid, 1.0, PLAYER_RADIUS);
     }
     bot.input.x = Math.cos(bot.botState.steerAngle);
     bot.input.y = Math.sin(bot.botState.steerAngle);
@@ -1557,7 +1687,7 @@ function update(room) {
     const magnitude = Math.hypot(player.input.x, player.input.y) || 1;
     const nx = player.input.x / magnitude;
     const ny = player.input.y / magnitude;
-    moveWithCollision(player, nx * 5.8 * dt, ny * 5.8 * dt);
+    moveWithCollision(room, player, nx * 5.8 * dt, ny * 5.8 * dt);
     collectPickups(room, player, now);
   }
 
@@ -1576,7 +1706,10 @@ function update(room) {
 
   io.to(room.id).emit('snapshot', {
     now,
-    matchEndsAt: room.matchEndsAt,
+    stage: {
+      index: room.stageIndex, count: STAGES.length, name: STAGES[room.stageIndex].name,
+      objectiveLabel: describeObjective(room.stageProgress),
+    },
     players: [...room.players.values()].filter((player) => player.ready).map(
       ({ input, lastShot, lastGrenade, invulnerableUntil, ready, botState, ...player }) => player
     ),

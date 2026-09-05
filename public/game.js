@@ -174,6 +174,7 @@ const ui = {
   lobbyStatus: document.querySelector('#lobby-status'), lobbySettings: document.querySelector('#lobby-settings'),
   lobbyLeave: document.querySelector('#lobby-leave'),
   health: document.querySelector('#health-number'), healthFill: document.querySelector('#health-fill'), timer: document.querySelector('#timer span'),
+  objective: document.querySelector('#objective span'),
   scoreboard: document.querySelector('#scoreboard'), connection: document.querySelector('#connection'), weapon: document.querySelector('#weapon-name'),
   slots: [...document.querySelectorAll('#weapon-slots .slot')], announcement: document.querySelector('#announcement'), damage: document.querySelector('#damage'),
   killfeed: document.querySelector('#killfeed'), ammo: document.querySelector('#ammo'), pickup: document.querySelector('#pickup-toast'),
@@ -224,7 +225,7 @@ const tracers = [];
 const explosions = [];
 const corpses = [];
 const bloodBursts = [];
-let matchEndsAt = Date.now();
+let stageInfo = { index: 0, count: 1, name: '', objectiveLabel: '' };
 
 // ---------------------------------------------------------------------------
 // Fábrica de sprites: em vez de bolinhas/ícones lisos, cada personagem e móvel
@@ -793,35 +794,70 @@ function drawBloodBursts(dt) {
   }
 }
 
-// Telegraph do zumbi "braço esticável": um traço que estica e fica mais
-// vermelho/brilhante conforme o golpe se aproxima — dá uma janela real de
-// esquiva antes do impacto, na mesma linguagem visual do glow do zumbi bomba.
+// Monta o contorno de uma língua/braço afinando da base pra ponta, com uma
+// leve ondulação perpendicular ao longo do comprimento — silhueta preenchida
+// em vez de um traço de largura constante, pra ler como carne, não como laser.
+function tongueOutline(length, baseWidth, tipWidth, wobble, phase) {
+  const segments = 10;
+  const upper = [];
+  const lower = [];
+  for (let i = 0; i <= segments; i += 1) {
+    const t = i / segments;
+    const x = length * t;
+    const width = baseWidth + (tipWidth - baseWidth) * t;
+    const wave = Math.sin(t * Math.PI * 2.2 + phase) * wobble * t;
+    upper.push([x, wave - width / 2]);
+    lower.push([x, wave + width / 2]);
+  }
+  return { upper, lower };
+}
+
+function traceTongueOutline(g, outline) {
+  g.beginPath();
+  g.moveTo(outline.upper[0][0], outline.upper[0][1]);
+  for (const [x, y] of outline.upper) g.lineTo(x, y);
+  for (let i = outline.lower.length - 1; i >= 0; i -= 1) g.lineTo(outline.lower[i][0], outline.lower[i][1]);
+  g.closePath();
+}
+
+// Telegraph do zumbi "braço esticável": uma língua/braço que estica, afina na
+// ponta e ondula levemente conforme o golpe se aproxima — dá uma janela real
+// de esquiva antes do impacto, em tom de carne em vez de um traço vermelho reto.
 function drawStretchTelegraph(entity) {
+  const now = Date.now();
   if (entity.stretchPhase === 'strike' || entity.stretchPhase === 'pull') {
     // Braço conectado: golpe/puxão em andamento — reforça visualmente o
     // acerto, já que antes strike/recover não tinham nenhum efeito próprio.
     ctx.save();
     ctx.translate(entity.x, entity.y - 0.5);
     ctx.rotate(entity.angle);
-    ctx.strokeStyle = 'rgba(255,40,30,0.95)';
-    ctx.lineWidth = 0.22;
-    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(2.0, 0); ctx.stroke();
+    const outline = tongueOutline(2.0, 0.24, 0.06, Math.sin(now / 90) * 0.05, now / 140);
+    traceTongueOutline(ctx, outline);
+    const grad = ctx.createLinearGradient(0, 0, 2.0, 0);
+    grad.addColorStop(0, 'rgba(110,35,70,0.95)');
+    grad.addColorStop(1, 'rgba(225,120,150,0.9)');
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(60,15,35,0.6)';
+    ctx.lineWidth = 0.025;
+    ctx.stroke();
     ctx.restore();
     return;
   }
-  const remaining = (entity.phaseAt || 0) - Date.now();
+  const remaining = (entity.phaseAt || 0) - now;
   if (remaining <= 0 || remaining > STRETCH_WINDUP_MS) return;
   const t = 1 - Math.max(0, Math.min(1, remaining / STRETCH_WINDUP_MS));
   const reach = 0.6 + t * 1.4;
   ctx.save();
   ctx.translate(entity.x, entity.y - 0.5);
   ctx.rotate(entity.angle);
+  const outline = tongueOutline(reach, 0.1 + t * 0.1, 0.03, 0.03 * t, now / 160);
+  traceTongueOutline(ctx, outline);
   const grad = ctx.createLinearGradient(0, 0, reach, 0);
-  grad.addColorStop(0, 'rgba(120,40,30,0.9)');
-  grad.addColorStop(1, `rgba(255,${Math.round(80 - t * 60)},${Math.round(60 - t * 40)},${0.5 + t * 0.4})`);
-  ctx.strokeStyle = grad;
-  ctx.lineWidth = 0.14 + t * 0.06;
-  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(reach, 0); ctx.stroke();
+  grad.addColorStop(0, `rgba(110,35,70,${0.4 + t * 0.4})`);
+  grad.addColorStop(1, `rgba(225,${Math.round(120 - t * 20)},${Math.round(150 - t * 30)},${0.5 + t * 0.3})`);
+  ctx.fillStyle = grad;
+  ctx.fill();
   ctx.restore();
 }
 
@@ -1329,8 +1365,8 @@ function updateHud(players) {
     ui.shieldBar.classList.toggle('active', shieldPct > 0);
     ui.grenadeCount.textContent = String(self.grenades || 0);
   }
-  const seconds = Math.max(0, Math.ceil((matchEndsAt - Date.now()) / 1000));
-  ui.timer.textContent = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+  ui.timer.textContent = `${stageInfo.index + 1}/${stageInfo.count}`;
+  ui.objective.textContent = stageInfo.objectiveLabel;
   const sorted = [...players].sort((a, b) => b.score - a.score);
   ui.scoreboard.innerHTML = `<div class="score-head"><span>AGENTE</span><span>PTS</span><span>K</span></div>${sorted.map((p) => `<div class="score-row ${p.id === selfId ? 'self' : ''}"><span>${escapeHtml(p.name)}${p.isBot ? ' <small style="opacity:.6">NPC</small>' : ''}</span><b>${p.score}</b><span>${p.kills}</span></div>`).join('')}`;
 }
@@ -1555,8 +1591,31 @@ socket.on('matchStarted', () => {
   ui.roundend.style.display = 'none';
   setClientState('playing');
 });
+// Troca de estágio dentro da mesma campanha/partida (objetivo cumprido) —
+// diferente de `welcome`, que só chega uma vez ao entrar na sala. Limpa todo
+// estado visual do estágio anterior pra não sobrar zumbi/sangue "fantasma"
+// na tela por um frame antes do próximo snapshot chegar.
+socket.on('stageChange', (data) => {
+  world = { walls: data.walls, props: data.props, arena: data.arena };
+  resetExploredMask(data.arena);
+  entities.clear();
+  targets.clear();
+  pickupsState.length = 0;
+  tracers.length = 0;
+  explosions.length = 0;
+  corpses.length = 0;
+  bloodBursts.length = 0;
+  stageInfo.index = data.stageIndex;
+  stageInfo.count = data.stageCount;
+  stageInfo.name = data.stageName;
+});
 socket.on('snapshot', (snapshot) => {
-  matchEndsAt = snapshot.matchEndsAt;
+  if (snapshot.stage) {
+    stageInfo.index = snapshot.stage.index;
+    stageInfo.count = snapshot.stage.count;
+    stageInfo.name = snapshot.stage.name;
+    stageInfo.objectiveLabel = snapshot.stage.objectiveLabel;
+  }
   const valid = new Set();
   for (const player of snapshot.players) { valid.add(player.id); syncEntity(player.id, 'player', player); }
   for (const zombie of snapshot.zombies) { valid.add(zombie.id); syncEntity(zombie.id, 'zombie', zombie); }
@@ -1572,9 +1631,10 @@ socket.on('announcement', (message) => {
   ui.announcement.querySelector('p').textContent = message.subtitle;
   ui.announcement.classList.add('show');
   setTimeout(() => ui.announcement.classList.remove('show'), message.brief ? 1400 : 3300);
-  if (message.title === 'NOVA RODADA') ui.roundend.style.display = 'none';
 });
 socket.on('roundEnd', (data) => {
+  const titleEl = ui.roundend.querySelector('#roundend-title');
+  if (titleEl) titleEl.innerHTML = data.campaignComplete ? 'CAMPANHA<br><span>CONCLUÍDA</span>' : 'FIM DA<br><span>OPERAÇÃO</span>';
   const sorted = [...(data.scores || [])].sort((a, b) => b.score - a.score);
   ui.roundendScoreboard.innerHTML = `<div class="score-head"><span>AGENTE</span><span>PTS</span><span>K</span></div>${sorted.map((p) => `<div class="score-row ${p.id === selfId ? 'self' : ''}"><span>${escapeHtml(p.name)}</span><b>${p.score}</b><span>${p.kills}</span></div>`).join('')}`;
   ui.roundendReady.disabled = false;

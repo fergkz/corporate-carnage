@@ -1,6 +1,6 @@
 # TODO-013 — Zumbi Alfa como alvo secundário recompensado
 
-**Status**: pendente
+**Status**: concluído
 
 **Pedido original**: no brainstorm de melhorias pós-playtest, o assistente sugeriu "um zumbi Alfa/elite que aparece de tempos em tempos, anunciado no HUD, com recompensa alta — dá objetivo além de atire em tudo, funciona em COOP e VERSUS". Fernando pediu para implementar tudo o que foi sugerido no brainstorm.
 

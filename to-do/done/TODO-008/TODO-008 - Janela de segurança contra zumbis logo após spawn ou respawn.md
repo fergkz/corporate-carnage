@@ -1,6 +1,6 @@
 # TODO-008 — Janela de segurança contra zumbis logo após spawn ou respawn
 
-**Status**: pendente
+**Status**: concluído
 
 **Pedido original**: durante um playtest guiado, o assistente relatou a Fernando que zumbis conseguem eliminar um jogador recém-spawnado muito rápido, sem margem real de reação — o kill feed mostrou várias mortes por zumbi em sequência curta para os 4 ocupantes de uma mesma sala. Fernando pediu para transformar esse achado (e os outros do mesmo relatório) em itens de backlog.
 

@@ -346,8 +346,18 @@ function moveWithCollision(room, entity, dx, dy, radius = PLAYER_RADIUS) {
   if (!collides(room, entity.x, nextY, radius)) entity.y = nextY;
 }
 
+// Em salas pequenas (2 jogadores), concentra spawn e pickups na metade dos
+// pontos mais próximos do centro do mapa em vez do conjunto inteiro — evita
+// dois jogadores nascerem/andarem em extremos opostos de um mapa pensado
+// pra até 16, sem precisar bloquear área nenhuma com parede nova.
+function limitedList(list, maxPlayers) {
+  if (maxPlayers > 2 || list.length <= 2) return list;
+  const sorted = [...list].sort((a, b) => (a[0] ** 2 + a[1] ** 2) - (b[0] ** 2 + b[1] ** 2));
+  return sorted.slice(0, Math.max(2, Math.ceil(sorted.length / 2)));
+}
+
 function spawnPoint(room) {
-  const points = room.spawnPoints;
+  const points = limitedList(room.spawnPoints, room.config.maxPlayers);
   let [x, y] = points[Math.floor(Math.random() * points.length)];
   let attempts = 0;
   while (collides(room, x, y) && attempts < 12) {
@@ -364,7 +374,7 @@ function randomPickupPosition(room, exclude) {
       .filter((pickup) => pickup.active && pickup !== exclude)
       .map((pickup) => `${pickup.x},${pickup.y}`)
   );
-  const pool = room.pickupSpawnPool;
+  const pool = limitedList(room.pickupSpawnPool, room.config.maxPlayers);
   let choice = pool[Math.floor(Math.random() * pool.length)];
   let attempts = 0;
   while (taken.has(`${choice[0]},${choice[1]}`) && attempts < 20) {

@@ -1,6 +1,6 @@
 # TODO-014 — Rotação automática de preset entre partidas na mesma sala
 
-**Status**: pendente
+**Status**: concluído
 
 **Pedido original**: no brainstorm de melhorias pós-playtest, o assistente sugeriu "rotação automática de preset entre partidas na mesma sala (Coop → Versus → Battle Royale) pra variar sem o host reconfigurar toda vez". Fernando pediu para implementar tudo o que foi sugerido no brainstorm.
 

@@ -1469,7 +1469,7 @@ const JOIN_ERROR_LABEL = {
   not_public: 'Sala não é pública', already_in_room: 'Você já está em uma sala', server_full: 'Servidor cheio',
 };
 
-const DEFAULT_ROOM_CONFIG = { visibility: 'public', mode: 'coop', players: '4', lifeMode: 'respawn', difficulty: 'normal' };
+const DEFAULT_ROOM_CONFIG = { visibility: 'public', mode: 'coop', players: '4', lifeMode: 'respawn', difficulty: 'normal', autoRotate: 'off' };
 const roomConfig = { ...DEFAULT_ROOM_CONFIG };
 let editingExistingRoom = false;
 let latestRoomSettings = null;
@@ -1493,6 +1493,7 @@ setupOptGroup('#opt-mode', 'mode');
 setupOptGroup('#opt-players', 'players');
 setupOptGroup('#opt-lifemode', 'lifeMode');
 setupOptGroup('#opt-difficulty', 'difficulty');
+setupOptGroup('#opt-autorotate', 'autoRotate');
 
 function setOptGroupValue(selector, value) {
   const container = document.querySelector(selector);
@@ -1516,11 +1517,13 @@ function applySettingsToForm(settings, visibility) {
   roomConfig.players = String(settings.maxPlayers);
   roomConfig.lifeMode = settings.lifeMode;
   roomConfig.difficulty = settings.difficulty || 'normal';
+  roomConfig.autoRotate = settings.autoRotate ? 'on' : 'off';
   setOptGroupValue('#opt-visibility', roomConfig.visibility);
   setOptGroupValue('#opt-mode', roomConfig.mode);
   setOptGroupValue('#opt-players', roomConfig.players);
   setOptGroupValue('#opt-lifemode', roomConfig.lifeMode);
   setOptGroupValue('#opt-difficulty', roomConfig.difficulty);
+  setOptGroupValue('#opt-autorotate', roomConfig.autoRotate);
   updateVersusScoreHint();
 }
 
@@ -1618,6 +1621,7 @@ ui.roomCreateSubmit.addEventListener('click', () => {
     maxPlayers: Number(roomConfig.players),
     lifeMode: roomConfig.lifeMode,
     difficulty: roomConfig.difficulty,
+    autoRotate: roomConfig.autoRotate === 'on',
   };
   if (editingExistingRoom) {
     socket.emit('updateRoomSettings', payload, (res) => {

@@ -51,7 +51,13 @@ const STAGES = [
       { x: 15, y: 6, w: 4.4, h: 1.55 },
       { x: -15, y: 15, w: 4.4, h: 1.55 },
       { x: 15, y: -15, w: 4.4, h: 1.55 },
-      { x: 0, y: 0, w: 6.6, h: 5.2 },
+      // Átrio central: o bloco sólido de recepção virou um balcão só na
+      // borda sul, abrindo o miolo do mapa (bom pra rifle/míssil de longo
+      // alcance) — 2 pilares finos no meio dão cobertura pontual sem
+      // fechar o espaço de novo.
+      { x: 0, y: 1.95, w: 6.6, h: 1.3 },
+      { x: -2, y: -0.8, w: 0.8, h: 0.8 },
+      { x: 2, y: -0.8, w: 0.8, h: 0.8 },
       { x: -14, y: 0, w: 3.6, h: 1.4 },
       { x: 14, y: 0, w: 3.6, h: 1.4 },
       { x: 0, y: 15, w: 5, h: 4 },
@@ -78,7 +84,7 @@ const STAGES = [
     ],
     // Apenas decoração enviada ao cliente para desenhar o escritório; não colide.
     props: [
-      { type: 'reception', x: 0, y: 0, w: 6.6, h: 5.2 },
+      { type: 'reception', x: 0, y: 1.95, w: 6.6, h: 1.3 },
       { type: 'desk', x: -15, y: -6, rot: 0 },
       { type: 'desk', x: -12.6, y: -6.6, rot: 0 },
       { type: 'desk', x: 15, y: -6, rot: Math.PI },

@@ -1,6 +1,6 @@
 # TODO-016 — Átrio central aberto no escritório
 
-**Status**: pendente
+**Status**: concluído
 
 **Pedido original**: no brainstorm de melhorias pós-playtest, o assistente sugeriu "um espaço central mais aberto (tipo átrio), em contraste com o mapa atual que é bem compartimentado — cria uma zona boa pra rifle/míssil de longo alcance, opondo aos corredores estreitos que já favorecem faca/escopeta". Fernando pediu para implementar tudo o que foi sugerido no brainstorm.
 

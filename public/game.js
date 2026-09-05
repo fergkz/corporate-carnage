@@ -706,10 +706,8 @@ function drawWalls() {
 // fixas nos cantos do bloco central da recepção e nas duas entradas em L
 // (Servidores/Copa), escolhidas por serem os pontos mais percorridos do mapa.
 const CHAMFER_CORNERS = [
-  { x: -3.3, y: -2.6, angle: Math.PI * 1.25 }, // recepção, canto NO
-  { x: 3.3, y: -2.6, angle: Math.PI * 1.75 }, // recepção, canto NE
-  { x: -3.3, y: 2.6, angle: Math.PI * 0.75 }, // recepção, canto SO
-  { x: 3.3, y: 2.6, angle: Math.PI * 0.25 }, // recepção, canto SE
+  { x: -3.3, y: 1.3, angle: Math.PI * 1.25 }, // balcão da recepção, canto NO (voltado pro átrio)
+  { x: 3.3, y: 1.3, angle: Math.PI * 1.75 }, // balcão da recepção, canto NE (voltado pro átrio)
   { x: -8.8, y: 6.6, angle: Math.PI * 0.25 }, // entrada da Sala de Servidores
   { x: 10.8, y: -8.5, angle: Math.PI * 1.25 }, // entrada da Copa
 ];

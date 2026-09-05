@@ -135,6 +135,15 @@ const STAGES = [
       { id: 'porta-servidores', x: -2.8, y: 9.8, w: 0.5, h: 6.4, locked: false },
       { id: 'porta-copa', x: 8, y: -2.9, w: 6, h: 0.5, locked: false },
     ],
+    // Eventos ambientais (TODO-021): alavancas fixas, interagíveis por
+    // proximidade com a mesma tecla `E` das portas. `apagao` reduz a visão
+    // de todo mundo por um tempo; `alarme` atrai os zumbis pro jogador vivo
+    // mais próximo da própria alavanca (reaproveitando o mesmo mecanismo do
+    // especial `aggro`, só com a origem fixa em vez de ser quem coletou).
+    environmentSwitches: [
+      { id: 'apagao', type: 'apagao', x: 0, y: -5 },
+      { id: 'alarme', type: 'alarme', x: 0, y: 5 },
+    ],
     // Alvo escala com o tanto de zumbi configurado pra sala, pra continuar
     // fazendo sentido em salas com zombieBaseCount bem diferente de 14.
     objective: (room) => ({ type: 'eliminate', target: Math.max(10, room.config.zombieBaseCount + 6) }),
@@ -228,6 +237,9 @@ const REPEL_RADIUS = 3.2;
 // estivesse mais perto, o tempo todo, mesmo do outro lado do escritório.
 const ZOMBIE_SIGHT_RANGE = 11;
 const AGGRO_MS = 5000;
+const BLACKOUT_MS = 8000;
+const SWITCH_COOLDOWN_MS = 20000;
+const SWITCH_INTERACT_RANGE = 2.2;
 const BLADES_DURATION_MS = 10000;
 const BLADES_RADIUS = 1.3;
 const BLADES_DPS = 22;
@@ -546,6 +558,7 @@ function buildRoom(hostSocket, config, hostName) {
     walls: initialStages[0].walls,
     props: initialStages[0].props,
     doors: initialStages[0].doors || [],
+    environmentSwitches: initialStages[0].environmentSwitches || [],
     arena: initialStages[0].arena,
     pickupSpawnPool: initialStages[0].pickupSpawnPool,
     spawnPoints: initialStages[0].spawnPoints,
@@ -553,6 +566,8 @@ function buildRoom(hostSocket, config, hostName) {
     finalWaveAnnounced: false,
     alphaZombieId: null,
     alphaSpawnAt: Date.now() + ALPHA_SPAWN_INTERVAL_MS,
+    blackoutUntil: 0,
+    switchReadyAt: { apagao: 0, alarme: 0 },
     roundIndex: 0,
   };
   seedPickups(room);
@@ -573,7 +588,7 @@ function joinRoomSocket(socket, room, name) {
   room.players.set(socket.id, player);
   room.emptySince = null;
   socket.emit('welcome', {
-    id: socket.id, walls: room.walls, props: room.props, doors: room.doors, arena: room.arena, roomId: room.id, code: room.code,
+    id: socket.id, walls: room.walls, props: room.props, doors: room.doors, environmentSwitches: room.environmentSwitches, arena: room.arena, roomId: room.id, code: room.code,
     isHost: room.hostId === socket.id, settings: room.config,
   });
   io.to(room.id).emit('lobbyUpdate', lobbyPayload(room));
@@ -673,6 +688,9 @@ function applyStage(room, stageIndex, { preservePlayers }) {
   room.walls = stage.walls.map((wall) => ({ ...wall }));
   room.props = stage.props.map((prop) => ({ ...prop }));
   room.doors = (stage.doors || []).map((door) => ({ ...door }));
+  room.environmentSwitches = (stage.environmentSwitches || []).map((sw) => ({ ...sw }));
+  room.blackoutUntil = 0;
+  room.switchReadyAt = { apagao: 0, alarme: 0 };
   room.arena = stage.arena;
   room.pickupSpawnPool = stage.pickupSpawnPool;
   room.spawnPoints = stage.spawnPoints;
@@ -720,7 +738,7 @@ function applyStage(room, stageIndex, { preservePlayers }) {
   }
 
   io.to(room.id).emit('stageChange', {
-    walls: room.walls, props: room.props, doors: room.doors, arena: room.arena,
+    walls: room.walls, props: room.props, doors: room.doors, environmentSwitches: room.environmentSwitches, arena: room.arena,
     stageIndex, stageCount: stagesFor(room).length, stageName: stage.name,
   });
   io.to(room.id).emit('announcement', { title: stage.name.toUpperCase(), subtitle: describeObjective(room.stageProgress) });
@@ -1848,6 +1866,42 @@ io.on('connection', (socket) => {
     io.to(room.id).emit('doorUpdate', { id: nearest.id, locked: nearest.locked });
   });
 
+  socket.on('activateSwitch', () => {
+    const room = getRoom(socket);
+    if (!room) return;
+    const player = room.players.get(socket.id);
+    if (!player || !player.alive || !player.ready) return;
+    let nearest = null;
+    let nearestDist = Infinity;
+    for (const sw of room.environmentSwitches || []) {
+      const dist = Math.hypot(player.x - sw.x, player.y - sw.y);
+      if (dist < nearestDist) { nearestDist = dist; nearest = sw; }
+    }
+    if (!nearest || nearestDist > SWITCH_INTERACT_RANGE) return;
+    const now = Date.now();
+    if (now < (room.switchReadyAt[nearest.type] || 0)) return;
+    room.switchReadyAt[nearest.type] = now + SWITCH_COOLDOWN_MS;
+    if (nearest.type === 'apagao') {
+      room.blackoutUntil = now + BLACKOUT_MS;
+      io.to(room.id).emit('announcement', { title: 'APAGÃO', subtitle: 'Visão reduzida pra todo mundo' });
+    } else if (nearest.type === 'alarme') {
+      let target = null;
+      let targetDist = Infinity;
+      for (const other of room.players.values()) {
+        if (!other.alive || !other.ready) continue;
+        const dist = Math.hypot(other.x - nearest.x, other.y - nearest.y);
+        if (dist < targetDist) { targetDist = dist; target = other; }
+      }
+      if (target) {
+        for (const zombie of room.zombies.values()) {
+          zombie.forcedTargetId = target.id;
+          zombie.forcedUntil = now + AGGRO_MS;
+        }
+      }
+      io.to(room.id).emit('announcement', { title: 'ALARME DISPARADO', subtitle: 'Zumbis atraídos pro alarme' });
+    }
+  });
+
   socket.on('fire', (data) => {
     const room = getRoom(socket);
     if (!room) return;
@@ -1927,6 +1981,7 @@ function update(room) {
 
   io.to(room.id).emit('snapshot', {
     now,
+    blackoutUntil: room.blackoutUntil || 0,
     stage: {
       index: room.stageIndex, count: stagesFor(room).length, name: stagesFor(room)[room.stageIndex].name,
       objectiveLabel: describeObjective(room.stageProgress),

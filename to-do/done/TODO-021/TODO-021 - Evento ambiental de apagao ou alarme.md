@@ -1,6 +1,6 @@
 # TODO-021 — Evento ambiental de apagão ou alarme
 
-**Status**: pendente
+**Status**: concluído
 
 **Pedido original**: no brainstorm de melhorias pós-playtest, o assistente sugeriu "um evento ambiental: alavanca de apagão que reduz o raio de visão de todo mundo por alguns segundos, ou alarme que atrai zumbis pra um ponto — dá ferramenta tática além de atirar". Fernando pediu para implementar tudo o que foi sugerido no brainstorm.
 

@@ -10,6 +10,7 @@ const ARENA_BORDER = '#7a4a22';
 const SHIELD_CAPACITY = 60;
 const BASE_VISION = 8; // unidades de mundo visíveis normalmente (estilo Project Zomboid)
 const BOOSTED_VISION = 15; // unidades de mundo visíveis com o especial de visão ativo
+const BLACKOUT_VISION = 3.5; // unidades de mundo visíveis durante o evento ambiental de apagão
 const EXPLORED_MASK_RES = 3; // px por unidade de mundo na máscara de exploração (baixa resolução, célula ~0.33 unidade)
 const STRETCH_WINDUP_MS = 650; // espelha o windupMs do zumbi "braço esticável" no servidor
 
@@ -253,7 +254,7 @@ const ui = {
   roundendLobby: document.querySelector('#roundend-lobby'), roundendLeave: document.querySelector('#roundend-leave'),
 };
 
-let world = { walls: [], props: [], doors: [], arena: 22 };
+let world = { walls: [], props: [], doors: [], environmentSwitches: [], arena: 22 };
 // Máscara de exploração: memória local de "por onde o jogador já passou"
 // nesta partida. Começa totalmente transparente (nada explorado) e cada
 // célula fica opaca pra sempre assim que o jogador visita — nunca volta a
@@ -270,6 +271,7 @@ let lastHp = 100;
 let mouseX = width / 2;
 let mouseY = height / 2;
 let visionRadius = BASE_VISION;
+let blackoutUntil = 0;
 const keys = new Set();
 
 // --- Estado de sessão (sala/lobby) ---
@@ -734,6 +736,29 @@ function drawDoors(camX, camY) {
       ctx.font = '700 13px Barlow Condensed, sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText(door.locked ? '[E] DESTRANCAR' : '[E] TRANCAR', 0, -10);
+      ctx.restore();
+    }
+  }
+}
+
+const SWITCH_LABEL = { apagao: 'ALAVANCA: APAGÃO', alarme: 'ALAVANCA: ALARME' };
+function drawEnvironmentSwitches(camX, camY) {
+  for (const sw of world.environmentSwitches || []) {
+    ctx.fillStyle = sw.type === 'apagao' ? 'rgba(120,110,220,0.85)' : 'rgba(220,150,60,0.85)';
+    ctx.beginPath();
+    ctx.arc(sw.x, sw.y, 0.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+    ctx.lineWidth = 0.06;
+    ctx.stroke();
+    if (Math.hypot(sw.x - camX, sw.y - camY) < 2.2) {
+      ctx.save();
+      ctx.translate(sw.x, sw.y);
+      ctx.scale(1 / SCALE, 1 / SCALE);
+      ctx.fillStyle = '#fff';
+      ctx.font = '700 13px Barlow Condensed, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`[E] ${SWITCH_LABEL[sw.type] || 'ATIVAR'}`, 0, -14);
       ctx.restore();
     }
   }
@@ -1333,6 +1358,7 @@ function render(now, dt) {
   drawGasHazards(now);
   drawWalls();
   drawDoors(camX, camY);
+  drawEnvironmentSwitches(camX, camY);
   drawChamferShadows();
   drawProps();
   drawPickups(now);
@@ -1502,8 +1528,10 @@ function updateHud(players) {
   if (self) {
     selfState = self;
     // `visionBoostUntil` vem de um pickup especial de visão tratado no servidor;
-    // aqui só decidimos o raio de visão local a partir dele.
-    visionRadius = (self.visionBoostUntil > Date.now()) ? BOOSTED_VISION : BASE_VISION;
+    // aqui só decidimos o raio de visão local a partir dele. O apagão (evento
+    // ambiental, sala inteira) tem prioridade sobre o boost individual.
+    visionRadius = (Date.now() < blackoutUntil) ? BLACKOUT_VISION
+      : (self.visionBoostUntil > Date.now()) ? BOOSTED_VISION : BASE_VISION;
     const recentLocalChange = performance.now() - lastLocalWeaponChangeAt < 500;
     if (currentWeapon !== 'grenade' && self.weapon !== currentWeapon && !recentLocalChange) activateSlot(self.weapon, false);
     if (self.hp < lastHp) { ui.damage.style.opacity = '.78'; setTimeout(() => { ui.damage.style.opacity = '0'; }, 130); playSfx('damage'); }
@@ -1744,7 +1772,7 @@ socket.on('disconnect', () => {
 });
 socket.on('welcome', (data) => {
   selfId = data.id;
-  world = { walls: data.walls, props: data.props, doors: data.doors || [], arena: data.arena };
+  world = { walls: data.walls, props: data.props, doors: data.doors || [], environmentSwitches: data.environmentSwitches || [], arena: data.arena };
   resetExploredMask(data.arena);
   roomId = data.roomId;
   roomCode = data.code;
@@ -1786,7 +1814,7 @@ socket.on('propDestroyed', (data) => {
   playSfx('explosion');
 });
 socket.on('stageChange', (data) => {
-  world = { walls: data.walls, props: data.props, doors: data.doors || [], arena: data.arena };
+  world = { walls: data.walls, props: data.props, doors: data.doors || [], environmentSwitches: data.environmentSwitches || [], arena: data.arena };
   resetExploredMask(data.arena);
   entities.clear();
   targets.clear();
@@ -1800,6 +1828,7 @@ socket.on('stageChange', (data) => {
   stageInfo.name = data.stageName;
 });
 socket.on('snapshot', (snapshot) => {
+  blackoutUntil = snapshot.blackoutUntil || 0;
   if (snapshot.stage) {
     stageInfo.index = snapshot.stage.index;
     stageInfo.count = snapshot.stage.count;
@@ -1903,7 +1932,7 @@ addEventListener('keydown', (event) => {
   if (event.code === 'Digit5') activateSlot('rocket');
   if (event.code === 'Digit6') activateSlot('grenade');
   if (event.code === 'KeyG' && availableSlots().includes('grenade')) { activateSlot('grenade', false); attemptGrenade(); }
-  if (event.code === 'KeyE' && deployed) socket.emit('toggleDoor');
+  if (event.code === 'KeyE' && deployed) { socket.emit('toggleDoor'); socket.emit('activateSwitch'); }
   if (event.code === 'Escape') leaveCurrentRoom();
 });
 addEventListener('keyup', (event) => keys.delete(event.code));

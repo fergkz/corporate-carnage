@@ -1,6 +1,6 @@
 # TODO-010 — Efeitos sonoros básicos de combate e coleta
 
-**Status**: pendente
+**Status**: concluído
 
 **Pedido original**: já listado como próxima evolução no [CONTEXT.md](../CONTEXT.md) ("Adicionar sons leves para armas, faca, dano e coleta") antes deste playtest; reforçado no relatório que o assistente entregou a Fernando, que pediu para transformar esse achado (e os outros do mesmo relatório) em itens de backlog.
 

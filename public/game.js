@@ -34,6 +34,47 @@ function spriteReady(img) {
   return !!img && img.complete && img.naturalWidth > 0;
 }
 
+// ---------------------------------------------------------------------------
+// Áudio: um <audio> pré-carregado por efeito, clonado a cada reprodução (via
+// cloneNode) pra permitir sobreposição quando o mesmo som precisa tocar mais
+// de uma vez rapidamente (ex. rajada de rifle). Sem Web Audio API — o jogo
+// só precisa de reprodução simples e sem espacialização.
+// ---------------------------------------------------------------------------
+const AUDIO_BASE = '/assets/audio/';
+function loadSfx(file) {
+  const audio = new Audio(AUDIO_BASE + file);
+  audio.preload = 'auto';
+  audio.volume = 0.55;
+  return audio;
+}
+const sfx = {
+  shot_pistol: loadSfx('shot_pistol.ogg'),
+  shot_rifle: loadSfx('shot_rifle.ogg'),
+  shot_shotgun: loadSfx('shot_shotgun.ogg'),
+  shot_rocket: loadSfx('shot_rocket.ogg'),
+  knife: loadSfx('knife.ogg'),
+  damage: loadSfx('damage.ogg'),
+  death: loadSfx('death.ogg'),
+  pickup: loadSfx('pickup.ogg'),
+  empty_click: loadSfx('empty_click.ogg'),
+  explosion: loadSfx('explosion.ogg'),
+};
+let sfxMuted = localStorage.getItem('cc_muted') === '1';
+function playSfx(name) {
+  if (sfxMuted) return;
+  const base = sfx[name];
+  if (!base) return;
+  const instance = base.cloneNode();
+  instance.volume = base.volume;
+  instance.play().catch(() => {});
+}
+function setSfxMuted(muted) {
+  sfxMuted = muted;
+  localStorage.setItem('cc_muted', muted ? '1' : '0');
+  const btn = document.querySelector('#mute-toggle');
+  if (btn) btn.textContent = muted ? 'SOM: OFF' : 'SOM: ON';
+}
+
 const ZOMBIE_TYPE_META = {
   normal0: { sprite: 'zombie_skinny.png', size: 1.15, maxHp: 65 },
   normal1: { sprite: 'zombie_kid.png', size: 1.15, maxHp: 65 },
@@ -740,6 +781,7 @@ function spawnDeathEffect(entity) {
   const now = performance.now();
   corpses.push({ x: entity.x, y: entity.y, angle: entity.angle, until: now + 4200, stain: Math.floor(Math.random() * 5) });
   bloodBursts.push({ x: entity.x, y: entity.y, life: 0.3, duration: 0.3 });
+  playSfx('death');
 }
 
 function drawBloodStains(now) {
@@ -1287,6 +1329,7 @@ function flashEmptyAmmo() {
   showToast('SEM MUNIÇÃO');
   ui.ammo.classList.add('empty');
   setTimeout(() => ui.ammo.classList.remove('empty'), 300);
+  playSfx('empty_click');
 }
 
 // --- Armas: slots trocam no scroll do mouse; granada entra no mesmo ciclo ---
@@ -1367,7 +1410,7 @@ function updateHud(players) {
     visionRadius = (self.visionBoostUntil > Date.now()) ? BOOSTED_VISION : BASE_VISION;
     const recentLocalChange = performance.now() - lastLocalWeaponChangeAt < 500;
     if (currentWeapon !== 'grenade' && self.weapon !== currentWeapon && !recentLocalChange) activateSlot(self.weapon, false);
-    if (self.hp < lastHp) { ui.damage.style.opacity = '.78'; setTimeout(() => { ui.damage.style.opacity = '0'; }, 130); }
+    if (self.hp < lastHp) { ui.damage.style.opacity = '.78'; setTimeout(() => { ui.damage.style.opacity = '0'; }, 130); playSfx('damage'); }
     lastHp = self.hp;
     ui.health.textContent = self.hp;
     ui.healthFill.style.width = `${self.hp}%`;
@@ -1686,14 +1729,17 @@ socket.on('killfeed', (message) => {
 });
 socket.on('pickup', (message) => {
   showToast(message.label);
+  playSfx('pickup');
 });
 socket.on('weaponEmpty', () => flashEmptyAmmo());
 socket.on('shot', (shot) => {
   const entity = entities.get(shot.id);
   if (shot.weapon === 'knife') {
     if (entity) entity.swingUntil = performance.now() + 150;
+    playSfx('knife');
     return;
   }
+  if (sfx[`shot_${shot.weapon}`]) playSfx(`shot_${shot.weapon}`);
   if (entity && sprites.flash[shot.weapon]) {
     entity.flashUntil = performance.now() + 90;
     entity.flashWeapon = shot.weapon;
@@ -1704,6 +1750,7 @@ socket.on('shot', (shot) => {
 });
 socket.on('grenade', (data) => {
   explosions.push({ x: data.x, y: data.y, radius: data.radius, life: 0.35, duration: 0.35 });
+  playSfx('explosion');
 });
 
 ui.roundendReady.addEventListener('click', () => {
@@ -1770,3 +1817,9 @@ function animate(now) {
   render(now, dt);
 }
 requestAnimationFrame(animate);
+
+const muteToggle = document.querySelector('#mute-toggle');
+if (muteToggle) {
+  setSfxMuted(sfxMuted);
+  muteToggle.addEventListener('click', () => setSfxMuted(!sfxMuted));
+}

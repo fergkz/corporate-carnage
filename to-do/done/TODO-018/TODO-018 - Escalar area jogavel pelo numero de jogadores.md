@@ -1,6 +1,6 @@
 # TODO-018 — Escalar área jogável pelo número de jogadores
 
-**Status**: pendente
+**Status**: concluído
 
 **Pedido original**: no brainstorm de melhorias pós-playtest, o assistente sugeriu "hoje o mesmo mapa fixo serve tanto 2 quanto 8 jogadores; bloquear áreas (portas temporárias/portas trancadas) para partidas de 2 jogadores manteria densidade de encontro similar independente do headcount". Fernando pediu para implementar tudo o que foi sugerido no brainstorm.
 

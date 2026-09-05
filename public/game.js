@@ -253,7 +253,7 @@ const ui = {
   roundendLobby: document.querySelector('#roundend-lobby'), roundendLeave: document.querySelector('#roundend-leave'),
 };
 
-let world = { walls: [], props: [], arena: 22 };
+let world = { walls: [], props: [], doors: [], arena: 22 };
 // Máscara de exploração: memória local de "por onde o jogador já passou"
 // nesta partida. Começa totalmente transparente (nada explorado) e cada
 // célula fica opaca pra sempre assim que o jogador visita — nunca volta a
@@ -713,6 +713,29 @@ function drawWalls() {
     ctx.strokeRect(wall.x - wall.w / 2, wall.y - wall.h / 2, wall.w, wall.h);
     ctx.fillStyle = 'rgba(255,255,255,0.05)';
     ctx.fillRect(wall.x - wall.w / 2, wall.y - wall.h / 2, wall.w, Math.min(0.12, wall.h));
+  }
+}
+
+// Portas trancáveis (TODO-020): aberta = quase invisível (só uma moldura
+// fina, o vão continua livre pra atravessar); trancada = preenchida sólida
+// como uma parede de verdade, cor de aviso pra ficar clara a diferença.
+function drawDoors(camX, camY) {
+  for (const door of world.doors || []) {
+    ctx.fillStyle = door.locked ? 'rgba(191,60,53,0.85)' : 'rgba(140,190,200,0.18)';
+    ctx.fillRect(door.x - door.w / 2, door.y - door.h / 2, door.w, door.h);
+    ctx.strokeStyle = door.locked ? 'rgba(255,120,110,0.9)' : 'rgba(140,190,200,0.5)';
+    ctx.lineWidth = 0.06;
+    ctx.strokeRect(door.x - door.w / 2, door.y - door.h / 2, door.w, door.h);
+    if (Math.hypot(door.x - camX, door.y - camY) < 2.2) {
+      ctx.save();
+      ctx.translate(door.x, door.y);
+      ctx.scale(1 / SCALE, 1 / SCALE);
+      ctx.fillStyle = '#fff';
+      ctx.font = '700 13px Barlow Condensed, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(door.locked ? '[E] DESTRANCAR' : '[E] TRANCAR', 0, -10);
+      ctx.restore();
+    }
   }
 }
 
@@ -1309,6 +1332,7 @@ function render(now, dt) {
   drawBloodStains(now);
   drawGasHazards(now);
   drawWalls();
+  drawDoors(camX, camY);
   drawChamferShadows();
   drawProps();
   drawPickups(now);
@@ -1720,7 +1744,7 @@ socket.on('disconnect', () => {
 });
 socket.on('welcome', (data) => {
   selfId = data.id;
-  world = { walls: data.walls, props: data.props, arena: data.arena };
+  world = { walls: data.walls, props: data.props, doors: data.doors || [], arena: data.arena };
   resetExploredMask(data.arena);
   roomId = data.roomId;
   roomCode = data.code;
@@ -1752,13 +1776,17 @@ socket.on('matchStarted', () => {
 // (o `world.walls` do cliente nem é usado pra colisão — o servidor é
 // autoritativo — só pra desenhar) e tocamos um efeito de estilhaço leve,
 // reaproveitando o mesmo efeito visual da explosão de granada.
+socket.on('doorUpdate', (data) => {
+  const door = world.doors.find((d) => d.id === data.id);
+  if (door) door.locked = data.locked;
+});
 socket.on('propDestroyed', (data) => {
   world.props = world.props.filter((p) => p.id !== data.id);
   explosions.push({ x: data.x, y: data.y, radius: 1.4, life: 0.3, duration: 0.3 });
   playSfx('explosion');
 });
 socket.on('stageChange', (data) => {
-  world = { walls: data.walls, props: data.props, arena: data.arena };
+  world = { walls: data.walls, props: data.props, doors: data.doors || [], arena: data.arena };
   resetExploredMask(data.arena);
   entities.clear();
   targets.clear();
@@ -1875,6 +1903,7 @@ addEventListener('keydown', (event) => {
   if (event.code === 'Digit5') activateSlot('rocket');
   if (event.code === 'Digit6') activateSlot('grenade');
   if (event.code === 'KeyG' && availableSlots().includes('grenade')) { activateSlot('grenade', false); attemptGrenade(); }
+  if (event.code === 'KeyE' && deployed) socket.emit('toggleDoor');
   if (event.code === 'Escape') leaveCurrentRoom();
 });
 addEventListener('keyup', (event) => keys.delete(event.code));

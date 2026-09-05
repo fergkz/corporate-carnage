@@ -539,6 +539,10 @@ function buildRoom(hostSocket, config, hostName) {
       map: mapId,
     },
     players: new Map(),
+    // Fila de espectadores (TODO-022): jogadores humanos que tentaram
+    // entrar numa sala cheia (sem bot pra substituir) — promovidos por
+    // ordem de chegada quando uma vaga real abre (ver removePlayerFromRoom).
+    spectators: new Map(),
     zombies: new Map(),
     projectiles: new Map(),
     hazards: new Map(),
@@ -594,6 +598,25 @@ function joinRoomSocket(socket, room, name) {
   io.to(room.id).emit('lobbyUpdate', lobbyPayload(room));
 }
 
+function joinAsSpectator(socket, room, name) {
+  socket.leave(LOBBY_BROWSER_ROOM);
+  socket.join(room.id);
+  socketRoom.set(socket.id, room.id);
+  room.spectators.set(socket.id, { id: socket.id, name });
+  socket.emit('welcome', {
+    id: socket.id, walls: room.walls, props: room.props, doors: room.doors, environmentSwitches: room.environmentSwitches, arena: room.arena, roomId: room.id, code: room.code,
+    isHost: false, settings: room.config, spectating: true,
+  });
+  broadcastSpectatorQueue(room);
+}
+
+function broadcastSpectatorQueue(room) {
+  const queue = [...room.spectators.values()];
+  queue.forEach((spec, index) => {
+    io.to(spec.id).emit('spectatorQueue', { position: index + 1, total: queue.length });
+  });
+}
+
 function attemptJoin(socket, room, name, ack) {
   if (!room) return safeAck(ack, { ok: false, reason: 'not_found' });
   if (room.state !== 'lobby') return safeAck(ack, { ok: false, reason: 'already_started' });
@@ -601,7 +624,14 @@ function attemptJoin(socket, room, name, ack) {
     // Sala "cheia" só de bots: um jogador real assume o lugar de um deles em
     // vez de ser rejeitado — o total de vagas nunca muda.
     const bot = [...room.players.values()].find((p) => p.isBot);
-    if (!bot) return safeAck(ack, { ok: false, reason: 'full' });
+    if (!bot) {
+      // Cheia de humanos de verdade: em vez de recusar, entra na fila de
+      // espectador — é promovido a jogador quando alguém sair (ver
+      // removePlayerFromRoom).
+      const finalName = sanitizeName(name) || `Agente ${room.spectators.size + 1}`;
+      joinAsSpectator(socket, room, finalName);
+      return safeAck(ack, { ok: true, spectating: true, roomId: room.id, code: room.code, settings: room.config, name: room.name });
+    }
     room.players.delete(bot.id);
   }
   const humanCount = [...room.players.values()].filter((p) => !p.isBot).length;
@@ -777,6 +807,13 @@ function destroyRoomIfStillEmpty(room) {
 // derrubar a conexão) — remove o jogador da sala, promove novo host se
 // preciso e agenda a destruição da sala se não sobrar nenhum humano.
 function removePlayerFromRoom(socket, room) {
+  if (room.spectators.has(socket.id)) {
+    room.spectators.delete(socket.id);
+    socketRoom.delete(socket.id);
+    socket.leave(room.id);
+    broadcastSpectatorQueue(room);
+    return;
+  }
   room.players.delete(socket.id);
   socketRoom.delete(socket.id);
   socket.leave(room.id);
@@ -791,10 +828,21 @@ function removePlayerFromRoom(socket, room) {
     setTimeout(() => destroyRoomIfStillEmpty(room), ROOM_EMPTY_GRACE_MS);
   } else {
     // Ainda em lobby e sobrou vaga (jogador saiu antes da partida começar):
-    // um bot reaparece pra manter a sala cheia, simétrico ao que acontece
-    // quando um jogador real entra numa sala só de bots.
+    // promove o espectador mais antigo da fila, se houver; senão um bot
+    // reaparece pra manter a sala cheia, simétrico ao que acontece quando um
+    // jogador real entra numa sala só de bots.
     if (room.state === 'lobby' && room.players.size < room.config.maxPlayers) {
-      spawnSingleBot(room, room.players.size);
+      const nextSpectatorId = room.spectators.keys().next().value;
+      const nextSpectator = nextSpectatorId ? room.spectators.get(nextSpectatorId) : null;
+      const spectatorSocket = nextSpectator ? io.sockets.sockets.get(nextSpectator.id) : null;
+      if (nextSpectator && spectatorSocket) {
+        room.spectators.delete(nextSpectator.id);
+        joinRoomSocket(spectatorSocket, room, nextSpectator.name);
+        spectatorSocket.emit('promotedToPlayer', {});
+        broadcastSpectatorQueue(room);
+      } else {
+        spawnSingleBot(room, room.players.size);
+      }
     }
     io.to(room.id).emit('lobbyUpdate', lobbyPayload(room));
     broadcastRoomListIfPublic(room);

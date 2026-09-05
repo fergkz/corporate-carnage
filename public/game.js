@@ -285,6 +285,7 @@ let clientState = 'landing'; // 'landing' | 'createRoom' | 'lobby' | 'playing' |
 let roomId = null;
 let roomCode = null;
 let isHost = false;
+let isQueuedSpectator = false;
 
 function setClientState(next) {
   clientState = next;
@@ -1725,7 +1726,7 @@ function renderLobby(data) {
   )).join('') || '<div class="empty-hint">Ninguém na sala ainda</div>';
   ui.lobbyStart.style.display = isHost ? 'block' : 'none';
   ui.lobbySettings.style.display = isHost ? 'block' : 'none';
-  ui.lobbyStatus.textContent = isHost ? '' : 'AGUARDANDO O HOST INICIAR A PARTIDA';
+  if (!isQueuedSpectator) ui.lobbyStatus.textContent = isHost ? '' : 'AGUARDANDO O HOST INICIAR A PARTIDA';
 }
 
 function leaveCurrentRoom() {
@@ -1833,6 +1834,14 @@ socket.on('matchStarted', () => {
 // (o `world.walls` do cliente nem é usado pra colisão — o servidor é
 // autoritativo — só pra desenhar) e tocamos um efeito de estilhaço leve,
 // reaproveitando o mesmo efeito visual da explosão de granada.
+socket.on('spectatorQueue', ({ position, total }) => {
+  isQueuedSpectator = true;
+  ui.lobbyStatus.textContent = `FILA DE ESPECTADOR: posição ${position} de ${total} — entra assim que abrir vaga`;
+});
+socket.on('promotedToPlayer', () => {
+  isQueuedSpectator = false;
+  showToast('VOCÊ FOI PROMOVIDO A JOGADOR!');
+});
 socket.on('doorUpdate', (data) => {
   const door = world.doors.find((d) => d.id === data.id);
   if (door) door.locked = data.locked;

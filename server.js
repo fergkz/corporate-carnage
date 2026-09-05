@@ -13,7 +13,10 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.get('/health', (_request, response) => response.json({ ok: true }));
 
 const TICK_RATE = 20;
-const MATCH_SECONDS = 180;
+const MATCH_DURATION_DEFAULT = 600;
+const MATCH_DURATION_MIN = 300;
+const MATCH_DURATION_MAX = 900;
+const VERSUS_SCORE_LIMIT = 30;
 const ARENA = 30; // mapa mais amplo — o escritório (paredes/móveis) continua no miolo original, sobra mais área aberta na borda
 const PLAYER_RADIUS = 0.46;
 
@@ -200,6 +203,16 @@ const LOBBY_BROWSER_ROOM = '__lobby_browser__';
 const ROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const BOT_NAMES = ['Ranger', 'Coyote', 'Viper', 'Nomad', 'Falcon', 'Reaper', 'Ghost', 'Sentinel'];
 
+// Cada nível de dificuldade escolhido na criação da sala já define a curva de
+// zumbis e a IA dos bots que preenchem as vagas vazias — o host não escolhe
+// mais esses parâmetros diretamente.
+const DIFFICULTY_PRESETS = {
+  easy: { zombieSpawnMode: 'fixed', zombieBaseCount: 8, npcDifficulty: 'low' },
+  normal: { zombieSpawnMode: 'constant', zombieBaseCount: 14, npcDifficulty: 'standard' },
+  hard: { zombieSpawnMode: 'constant', zombieBaseCount: 22, npcDifficulty: 'standard' },
+  insane: { zombieSpawnMode: 'evolution', zombieBaseCount: 18, npcDifficulty: 'high' },
+};
+
 const rooms = new Map(); // roomId (== code) -> Room
 const socketRoom = new Map(); // socketId -> roomId
 
@@ -214,11 +227,6 @@ function safeAck(ack, payload) {
 function sanitizeName(name) {
   if (typeof name !== 'string') return '';
   return name.trim().slice(0, 16);
-}
-
-function sanitizeRoomName(name) {
-  if (typeof name !== 'string') return '';
-  return name.trim().slice(0, 24);
 }
 
 function generateRoomCode() {
@@ -375,42 +383,30 @@ function spawnBotsForRoom(room) {
   for (let i = 0; i < room.config.npcCount; i += 1) spawnSingleBot(room, i);
 }
 
-// Aplica mudanças de npcCount/npcDifficulty feitas via updateRoomSettings:
-// adiciona ou remove bots até bater com a config nova, sem mexer nos humanos.
-function syncBotsToConfig(room) {
-  const bots = [...room.players.values()].filter((p) => p.isBot);
-  const humanCount = room.players.size - bots.length;
-  const maxBotsAllowed = Math.max(0, room.config.maxPlayers - humanCount);
-  const targetCount = Math.min(room.config.npcCount, maxBotsAllowed);
-  if (bots.length > targetCount) {
-    for (const bot of bots.slice(targetCount)) room.players.delete(bot.id);
-  } else if (bots.length < targetCount) {
-    for (let i = bots.length; i < targetCount; i += 1) spawnSingleBot(room, i);
-  }
-  for (const player of room.players.values()) {
-    if (player.isBot) player.botDifficulty = room.config.npcDifficulty;
-  }
-  room.config.npcCount = targetCount;
-}
-
 function buildRoom(hostSocket, config, hostName) {
   const code = generateRoomCode();
+  const difficulty = Object.prototype.hasOwnProperty.call(DIFFICULTY_PRESETS, config.difficulty) ? config.difficulty : 'normal';
+  const preset = DIFFICULTY_PRESETS[difficulty];
+  const maxPlayers = clamp(Math.round(Number(config.maxPlayers)) || 4, 2, 16);
+  const mode = config.mode === 'versus' ? 'versus' : 'coop';
   const room = {
     id: code,
     code,
-    name: sanitizeRoomName(config.roomName) || `Sala de ${hostName}`,
+    name: `Sala de ${hostName}`,
     visibility: config.visibility === 'private' ? 'private' : 'public',
     hostId: hostSocket.id,
     state: 'lobby',
     config: {
-      maxPlayers: clamp(Math.round(Number(config.maxPlayers)) || 8, 2, 16),
-      mode: config.mode === 'versus' ? 'versus' : 'coop',
+      maxPlayers,
+      mode,
       lifeMode: config.lifeMode === 'battleRoyale' ? 'battleRoyale' : 'respawn',
-      zombieSpawnMode: ['fixed', 'constant', 'evolution'].includes(config.zombieSpawnMode) ? config.zombieSpawnMode : 'constant',
-      zombieBaseCount: clamp(Math.round(Number(config.zombieBaseCount)) || 14, 0, 60),
-      npcCount: clamp(Math.round(Number(config.npcCount)) || 0, 0, 15),
-      npcDifficulty: ['low', 'standard', 'high'].includes(config.npcDifficulty) ? config.npcDifficulty : 'standard',
-      scoreLimit: clamp(Math.round(Number(config.scoreLimit)) || 0, 0, 500),
+      matchDurationSeconds: clamp(Math.round(Number(config.matchDurationSeconds)) || MATCH_DURATION_DEFAULT, MATCH_DURATION_MIN, MATCH_DURATION_MAX),
+      difficulty,
+      zombieSpawnMode: preset.zombieSpawnMode,
+      zombieBaseCount: preset.zombieBaseCount,
+      npcCount: Math.max(0, maxPlayers - 1),
+      npcDifficulty: preset.npcDifficulty,
+      scoreLimit: mode === 'versus' ? VERSUS_SCORE_LIMIT : 0,
     },
     players: new Map(),
     zombies: new Map(),
@@ -427,7 +423,6 @@ function buildRoom(hostSocket, config, hostName) {
     emptySince: null,
     tickHandle: null,
   };
-  room.config.npcCount = Math.min(room.config.npcCount, Math.max(0, room.config.maxPlayers - 1));
   seedPickups(room);
   rooms.set(room.id, room);
   spawnBotsForRoom(room);
@@ -455,7 +450,13 @@ function joinRoomSocket(socket, room, name) {
 function attemptJoin(socket, room, name, ack) {
   if (!room) return safeAck(ack, { ok: false, reason: 'not_found' });
   if (room.state !== 'lobby') return safeAck(ack, { ok: false, reason: 'already_started' });
-  if (room.players.size >= room.config.maxPlayers) return safeAck(ack, { ok: false, reason: 'full' });
+  if (room.players.size >= room.config.maxPlayers) {
+    // Sala "cheia" só de bots: um jogador real assume o lugar de um deles em
+    // vez de ser rejeitado — o total de vagas nunca muda.
+    const bot = [...room.players.values()].find((p) => p.isBot);
+    if (!bot) return safeAck(ack, { ok: false, reason: 'full' });
+    room.players.delete(bot.id);
+  }
   const humanCount = [...room.players.values()].filter((p) => !p.isBot).length;
   const finalName = sanitizeName(name) || `Agente ${humanCount + 1}`;
   joinRoomSocket(socket, room, finalName);
@@ -479,7 +480,7 @@ function lobbyPayload(room) {
 function serializeRoomForList(room) {
   return {
     id: room.id, name: room.name, playerCount: room.players.size, maxPlayers: room.config.maxPlayers,
-    mode: room.config.mode, lifeMode: room.config.lifeMode, zombieSpawnMode: room.config.zombieSpawnMode, state: room.state,
+    mode: room.config.mode, lifeMode: room.config.lifeMode, difficulty: room.config.difficulty, state: room.state,
   };
 }
 
@@ -506,7 +507,7 @@ function returnToLobby(room) {
 }
 
 function resetMatch(room) {
-  room.matchEndsAt = Date.now() + MATCH_SECONDS * 1000;
+  room.matchEndsAt = Date.now() + room.config.matchDurationSeconds * 1000;
   room.zombies.clear();
   room.projectiles.clear();
   room.hazards.clear();
@@ -571,6 +572,12 @@ function removePlayerFromRoom(socket, room) {
     room.emptySince = Date.now();
     setTimeout(() => destroyRoomIfStillEmpty(room), ROOM_EMPTY_GRACE_MS);
   } else {
+    // Ainda em lobby e sobrou vaga (jogador saiu antes da partida começar):
+    // um bot reaparece pra manter a sala cheia, simétrico ao que acontece
+    // quando um jogador real entra numa sala só de bots.
+    if (room.state === 'lobby' && room.players.size < room.config.maxPlayers) {
+      spawnSingleBot(room, room.players.size);
+    }
     io.to(room.id).emit('lobbyUpdate', lobbyPayload(room));
     broadcastRoomListIfPublic(room);
   }
@@ -1479,17 +1486,37 @@ io.on('connection', (socket) => {
     if (!room) return safeAck(ack, { ok: false, reason: 'no_room' });
     if (room.hostId !== socket.id) return safeAck(ack, { ok: false, reason: 'not_host' });
     if (room.state !== 'lobby') return safeAck(ack, { ok: false, reason: 'not_lobby' });
-    if (typeof data.roomName === 'string') room.name = sanitizeRoomName(data.roomName) || room.name;
     if (data.visibility === 'public' || data.visibility === 'private') room.visibility = data.visibility;
-    if (data.mode === 'coop' || data.mode === 'versus') room.config.mode = data.mode;
+    if (data.mode === 'coop' || data.mode === 'versus') {
+      room.config.mode = data.mode;
+      room.config.scoreLimit = data.mode === 'versus' ? VERSUS_SCORE_LIMIT : 0;
+    }
     if (data.lifeMode === 'respawn' || data.lifeMode === 'battleRoyale') room.config.lifeMode = data.lifeMode;
-    if (['fixed', 'constant', 'evolution'].includes(data.zombieSpawnMode)) room.config.zombieSpawnMode = data.zombieSpawnMode;
-    if (Number.isFinite(Number(data.maxPlayers))) room.config.maxPlayers = clamp(Math.round(Number(data.maxPlayers)), 2, 16);
-    if (Number.isFinite(Number(data.zombieBaseCount))) room.config.zombieBaseCount = clamp(Math.round(Number(data.zombieBaseCount)), 0, 60);
-    if (Number.isFinite(Number(data.npcCount))) room.config.npcCount = clamp(Math.round(Number(data.npcCount)), 0, 15);
-    if (['low', 'standard', 'high'].includes(data.npcDifficulty)) room.config.npcDifficulty = data.npcDifficulty;
-    if (Number.isFinite(Number(data.scoreLimit))) room.config.scoreLimit = clamp(Math.round(Number(data.scoreLimit)), 0, 500);
-    syncBotsToConfig(room);
+    if (Number.isFinite(Number(data.matchDurationSeconds))) {
+      room.config.matchDurationSeconds = clamp(Math.round(Number(data.matchDurationSeconds)), MATCH_DURATION_MIN, MATCH_DURATION_MAX);
+    }
+    if (Object.prototype.hasOwnProperty.call(DIFFICULTY_PRESETS, data.difficulty)) {
+      const preset = DIFFICULTY_PRESETS[data.difficulty];
+      room.config.difficulty = data.difficulty;
+      room.config.zombieSpawnMode = preset.zombieSpawnMode;
+      room.config.zombieBaseCount = preset.zombieBaseCount;
+      room.config.npcDifficulty = preset.npcDifficulty;
+      for (const player of room.players.values()) {
+        if (player.isBot) player.botDifficulty = preset.npcDifficulty;
+      }
+    }
+    if (Number.isFinite(Number(data.maxPlayers))) {
+      const nextMax = clamp(Math.round(Number(data.maxPlayers)), 2, 16);
+      room.config.maxPlayers = nextMax;
+      const bots = [...room.players.values()].filter((p) => p.isBot);
+      const humanCount = room.players.size - bots.length;
+      const allowedBots = Math.max(0, nextMax - humanCount);
+      if (bots.length > allowedBots) {
+        for (const bot of bots.slice(allowedBots)) room.players.delete(bot.id);
+      } else if (bots.length < allowedBots) {
+        for (let i = bots.length; i < allowedBots; i += 1) spawnSingleBot(room, i);
+      }
+    }
     io.to(room.id).emit('lobbyUpdate', lobbyPayload(room));
     broadcastRoomListIfPublic(room);
     safeAck(ack, { ok: true, settings: room.config });

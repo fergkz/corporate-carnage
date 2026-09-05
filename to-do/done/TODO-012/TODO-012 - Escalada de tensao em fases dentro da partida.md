@@ -1,6 +1,6 @@
 # TODO-012 — Escalada de tensão em fases dentro da partida
 
-**Status**: pendente
+**Status**: concluído
 
 **Pedido original**: no brainstorm de melhorias pós-playtest, o assistente sugeriu a Fernando: "arco de tensão dentro da própria rodada — início mais calmo pra explorar/pegar arma, pressão crescendo no meio, minuto final com um pico de zumbis ou pontuação em dobro". Fernando pediu para implementar tudo o que foi sugerido no brainstorm.
 

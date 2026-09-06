@@ -252,6 +252,18 @@ const REPEL_RADIUS = 3.2;
 // estivesse mais perto, o tempo todo, mesmo do outro lado do escritório.
 const ZOMBIE_SIGHT_RANGE = 11;
 const AGGRO_MS = 5000;
+// "Director" leve (redesign de dificuldade): `scheduleZombieRespawn()` só
+// acelerava com o progresso do objetivo, nunca "respirava" depois de um pico
+// de combate real. `combatHeat` acumula com dano recebido/zumbis mortos e
+// decai com meia-vida; um calor alto atrasa o próximo respawn (folga), calor
+// baixo mantém o ritmo normal.
+const DIRECTOR_HEAT_PER_DAMAGE = 0.05;
+const DIRECTOR_HEAT_PER_KILL = 1.2;
+const DIRECTOR_HEAT_PER_DANGEROUS_KILL = 2.4;
+const DIRECTOR_HEAT_HALF_LIFE_MS = 9000;
+const DIRECTOR_DELAY_MULT_PER_HEAT = 0.12;
+const DIRECTOR_DELAY_MULT_MIN = 0.7;
+const DIRECTOR_DELAY_MULT_MAX = 2.2;
 const BLACKOUT_MS = 8000;
 const SWITCH_COOLDOWN_MS = 20000;
 const SWITCH_INTERACT_RANGE = 2.2;
@@ -587,6 +599,7 @@ function buildRoom(hostSocket, config, hostName) {
     spawnPoints: initialStages[0].spawnPoints,
     stageProgress: null,
     finalWaveAnnounced: false,
+    combatHeat: 0,
     alphaZombieId: null,
     alphaSpawnAt: Date.now() + ALPHA_SPAWN_INTERVAL_MS,
     blackoutUntil: 0,
@@ -768,6 +781,7 @@ function applyStage(room, stageIndex, { preservePlayers }) {
     room.stageProgress = { type: 'eliminate', target: objective.target, count: 0 };
   }
   room.finalWaveAnnounced = false;
+  room.combatHeat = 0;
   room.alphaZombieId = null;
   room.alphaSpawnAt = Date.now() + ALPHA_SPAWN_INTERVAL_MS;
 
@@ -956,8 +970,10 @@ function scheduleZombieRespawn(room) {
   // Fase 2 (40-80%): repõe mais rápido, pressão crescente.
   // Fase 3 (80%+): onda final — repõe bem mais rápido, com aviso único.
   let delay;
+  let applyDirector = true;
   if (fraction >= 0.8) {
     delay = 1500 + Math.random() * 2500;
+    applyDirector = false; // onda final não "respira" — clímax do estágio não deve ser diluído
     if (!room.finalWaveAnnounced) {
       room.finalWaveAnnounced = true;
       io.to(room.id).emit('announcement', { title: 'ONDA FINAL', subtitle: 'Últimos infectados chegando' });
@@ -966,6 +982,10 @@ function scheduleZombieRespawn(room) {
     delay = 3500 + Math.random() * 5500;
   } else {
     delay = 5000 + Math.random() * 10000;
+  }
+  if (applyDirector) {
+    const mult = clamp(1 + (room.combatHeat || 0) * DIRECTOR_DELAY_MULT_PER_HEAT, DIRECTOR_DELAY_MULT_MIN, DIRECTOR_DELAY_MULT_MAX);
+    delay *= mult;
   }
   setTimeout(() => {
     if (!roomAlive(room) || room.state !== 'playing') return;
@@ -1009,12 +1029,16 @@ function registerZombieKill(room, zombie) {
 function applyDamage(room, target, damage, attacker, isZombieTarget) {
   if (target.hp <= 0 || (!isZombieTarget && Date.now() < target.invulnerableUntil)) return false;
   const reduction = isZombieTarget ? (ZOMBIE_TYPES_BY_ID[target.typeId]?.damageReduction || 0) : 0;
-  damageHp(target, damage * (1 - reduction));
+  const applied = damage * (1 - reduction);
+  damageHp(target, applied);
+  if (!isZombieTarget) room.combatHeat = (room.combatHeat || 0) + applied * DIRECTOR_HEAT_PER_DAMAGE;
   if (target.hp > 0) return false;
   if (isZombieTarget) {
     const type = ZOMBIE_TYPES_BY_ID[target.typeId];
     room.zombies.delete(target.id);
     registerZombieKill(room, target);
+    const dangerous = target.isBoss || (type && (type.id === 'tank' || type.id === 'alpha'));
+    room.combatHeat = (room.combatHeat || 0) + (dangerous ? DIRECTOR_HEAT_PER_DANGEROUS_KILL : DIRECTOR_HEAT_PER_KILL);
     if (room.alphaZombieId === target.id) room.alphaZombieId = null;
     if (attacker) {
       attacker.score += type?.scoreValue || 1;
@@ -1248,6 +1272,7 @@ function explodeBomb(room, zombie, type) {
   }
   room.zombies.delete(zombie.id);
   registerZombieKill(room, zombie);
+  room.combatHeat = (room.combatHeat || 0) + DIRECTOR_HEAT_PER_KILL;
   scheduleZombieRespawn(room);
 }
 
@@ -2106,6 +2131,10 @@ function update(room) {
 
   if (room.state === 'playing') checkRoundEnd(room, now);
   if (room.state !== 'playing') return;
+
+  if (room.combatHeat > 0) {
+    room.combatHeat = Math.max(0, room.combatHeat * Math.pow(0.5, (dt * 1000) / DIRECTOR_HEAT_HALF_LIFE_MS));
+  }
 
   for (const player of room.players.values()) {
     if (player.isBot) updateBotAI(room, player, now);

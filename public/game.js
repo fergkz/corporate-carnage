@@ -893,6 +893,20 @@ function drawPickups(now) {
       drawRocketIcon(ctx);
     } else if (pickup.kind === 'weapon') {
       drawImageIcon(sprites.weaponIcon[pickup.weapon], 0.85);
+    } else if (pickup.kind === 'overclock') {
+      // Sem sprite dedicado — procedural, mais saturado que o glow genérico
+      // de fundo (linhas acima), reforçando a raridade do item.
+      const pulse = 0.5 + 0.5 * Math.sin(now / 110);
+      const spark = ctx.createRadialGradient(0, 0.1, 0, 0, 0.1, 0.42);
+      spark.addColorStop(0, `rgba(255,140,50,${0.85 + 0.15 * pulse})`);
+      spark.addColorStop(1, 'rgba(255,60,30,0)');
+      ctx.fillStyle = spark;
+      ctx.beginPath(); ctx.arc(0, 0.1, 0.3 + 0.05 * pulse, 0, Math.PI * 2); ctx.fill();
+      ctx.rotate(now / 400);
+      ctx.fillStyle = '#fff3e0';
+      ctx.beginPath();
+      ctx.moveTo(0, -0.32); ctx.lineTo(0.1, 0); ctx.lineTo(0, 0.32); ctx.lineTo(-0.1, 0); ctx.closePath();
+      ctx.fill();
     } else {
       drawImageIcon(ammoIconFor(pickup.amount), 0.55);
     }
@@ -1228,6 +1242,21 @@ function drawBladesAura(entity, now) {
   }
 }
 
+// Auréola pulsante do OVERCLOCK (redesign de jogabilidade) — visível em
+// qualquer jogador com o buff ativo, próprio ou rival: sinaliza "alvo
+// valioso/perigoso agora", no espírito do aviso sonoro do Quad Damage.
+function drawOverclockAura(entity, now) {
+  if (!(entity.overclockUntil > Date.now())) return;
+  const pulse = 0.5 + 0.5 * Math.sin(now / 130);
+  ctx.save();
+  ctx.strokeStyle = `rgba(255,90,40,${0.45 + 0.35 * pulse})`;
+  ctx.lineWidth = 0.07 + 0.03 * pulse;
+  ctx.beginPath();
+  ctx.arc(entity.x, entity.y, 0.68 + 0.06 * pulse, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawDashTrail(entity, now) {
   if (!(entity.dashUntil > Date.now())) return;
   const angle = Math.atan2(entity.dashDirY || 0, entity.dashDirX || 1);
@@ -1270,6 +1299,7 @@ function drawPlayers(now) {
     ctx.restore();
     drawDashTrail(entity, now);
     drawBladesAura(entity, now);
+    drawOverclockAura(entity, now);
     if (entity.shield > 0) {
       ctx.strokeStyle = 'rgba(63,127,209,0.85)';
       ctx.lineWidth = 0.09;
@@ -1541,6 +1571,7 @@ function interpolate(dt) {
     entity.projectileKind = target.kind;
     entity.radius = target.radius;
     entity.bladesUntil = target.bladesUntil;
+    entity.overclockUntil = target.overclockUntil;
     entity.dashUntil = target.dashUntil;
     entity.dashDirX = target.dashDirX;
     entity.dashDirY = target.dashDirY;

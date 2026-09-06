@@ -237,6 +237,20 @@ const DASH_COOLDOWN_MS = 3200;
 const DASH_IFRAME_MS = 250;
 const SHIELD_CAPACITY = 60;
 const HEART_HEAL = 25;
+// Rework de pickups (redesign de jogabilidade): munição/vida aparecem de
+// cara (mapa não fica vazio no segundo 1), o resto (armas, especiais) é
+// escalonado — antes `seedPickups()` preenchia quase todo o mapa de uma vez,
+// o que ficava irrelevante em rodadas que já acabavam em ~30s.
+const DRIP_BASE_MS = 4000;
+const DRIP_STEP_MS = 3000;
+const DRIP_JITTER_MS = 1500;
+// Pickup "OVERCLOCK" (risco/recompensa, estilo Quad Damage): dano em dobro
+// enquanto ativo, mas também mais vulnerável — e avisa a sala inteira via
+// killfeed, igual ao anúncio do Quad Damage.
+const OVERCLOCK_DURATION_MS = 12000;
+const OVERCLOCK_RESPAWN_MS = 70000;
+const OVERCLOCK_DAMAGE_MULT = 1.8;
+const OVERCLOCK_VULNERABILITY_MULT = 1.35;
 const GRENADE_MAX = 3;
 const GRENADE_DAMAGE = 70;
 const GRENADE_RADIUS = 2.4;
@@ -333,6 +347,7 @@ const pickupTemplates = [
   { id: 'repel-a', kind: 'repel', amount: REPEL_MS },
   { id: 'aggro-a', kind: 'aggro', amount: 0 },
   { id: 'blades-a', kind: 'blades', amount: BLADES_DURATION_MS },
+  { id: 'overclock-a', kind: 'overclock', amount: OVERCLOCK_DURATION_MS, respawnMs: OVERCLOCK_RESPAWN_MS },
 ];
 
 const MAX_ROOMS = 60;
@@ -436,9 +451,21 @@ function randomPickupPosition(room, exclude) {
 }
 
 function seedPickups(room) {
+  const now = Date.now();
+  let dripIndex = 0;
   for (const template of pickupTemplates) {
     const [x, y] = randomPickupPosition(room, null);
-    room.pickups.set(template.id, { ...template, x, y, active: true, respawnAt: 0 });
+    const immediate = template.kind === 'heart' || template.kind === 'ammo';
+    if (immediate) {
+      room.pickups.set(template.id, { ...template, x, y, active: true, respawnAt: 0 });
+    } else {
+      // Armas/especiais (inclui o overclock, sempre no fim da fila — nunca no
+      // segundo 1, reforça a raridade) chegam escalonados, não todos de uma vez.
+      const jitter = (Math.random() * 2 - 1) * DRIP_JITTER_MS;
+      const respawnAt = now + DRIP_BASE_MS + dripIndex * DRIP_STEP_MS + jitter;
+      dripIndex += 1;
+      room.pickups.set(template.id, { ...template, x, y, active: false, respawnAt });
+    }
   }
   // Mais zumbis/NPCs configurados na sala = mais munição e vida espalhadas
   // pelo mapa, pra manter o ritmo com a pressão extra.
@@ -499,6 +526,7 @@ function makePlayer(id, name, extra = {}) {
     grenades: 0, shield: 0, visionBoostUntil: 0, repelUntil: 0, bladesUntil: 0,
     downedUntil: 0, reviverId: null, reviveStartedAt: 0,
     dashUntil: 0, nextDashAt: 0, dashDirX: 0, dashDirY: 0,
+    overclockUntil: 0,
     joinedAt: Date.now(),
     ...extra,
   };
@@ -512,6 +540,7 @@ function resetPlayer(room, player, preserveScore = true) {
     visionBoostUntil: 0, repelUntil: 0, bladesUntil: 0,
     downedUntil: 0, reviverId: null, reviveStartedAt: 0,
     dashUntil: 0, nextDashAt: 0,
+    overclockUntil: 0,
   });
   if (!preserveScore) Object.assign(player, { score: 0, kills: 0, deaths: 0 });
 }
@@ -764,7 +793,17 @@ function applyStage(room, stageIndex, { preservePlayers }) {
   for (const [id, pickup] of room.pickups) {
     if (pickup.loot) { room.pickups.delete(id); continue; }
     const [x, y] = randomPickupPosition(room, pickup);
-    Object.assign(pickup, { x, y, active: true, respawnAt: 0 });
+    // Reposiciona sempre (o pool de posições mudou de estágio), mas só força
+    // reativação imediata se o pickup já estava ativo ou seu cooldown já
+    // tinha vencido — preserva o escalonamento do drip-feed de `seedPickups()`
+    // no início da partida (senão a troca de estágio 0 logo depois do seed
+    // reativava tudo de uma vez, anulando o escalonamento).
+    const now = Date.now();
+    if (pickup.active || !pickup.respawnAt || now >= pickup.respawnAt) {
+      Object.assign(pickup, { x, y, active: true, respawnAt: 0 });
+    } else {
+      Object.assign(pickup, { x, y });
+    }
   }
 
   const objective = stage.objective(room);
@@ -894,7 +933,10 @@ function handleDisconnect(socket) {
 }
 
 function damageHp(target, amount) {
-  let remaining = amount;
+  // Overclock (redesign de jogabilidade): quem está com o buff ativo também
+  // fica mais vulnerável — `target.overclockUntil` só existe em jogadores,
+  // então isso é automaticamente um no-op pra zumbis (undefined > número = false).
+  let remaining = target.overclockUntil > Date.now() ? amount * OVERCLOCK_VULNERABILITY_MULT : amount;
   if (target.shield > 0) {
     const absorbed = Math.min(target.shield, remaining);
     target.shield -= absorbed;
@@ -1029,7 +1071,8 @@ function registerZombieKill(room, zombie) {
 function applyDamage(room, target, damage, attacker, isZombieTarget) {
   if (target.hp <= 0 || (!isZombieTarget && Date.now() < target.invulnerableUntil)) return false;
   const reduction = isZombieTarget ? (ZOMBIE_TYPES_BY_ID[target.typeId]?.damageReduction || 0) : 0;
-  const applied = damage * (1 - reduction);
+  const outMult = attacker?.overclockUntil > Date.now() ? OVERCLOCK_DAMAGE_MULT : 1;
+  const applied = damage * outMult * (1 - reduction);
   damageHp(target, applied);
   if (!isZombieTarget) room.combatHeat = (room.combatHeat || 0) + applied * DIRECTOR_HEAT_PER_DAMAGE;
   if (target.hp > 0) return false;
@@ -1174,6 +1217,10 @@ function collectPickups(room, player, now) {
     } else if (pickup.kind === 'blades') {
       player.bladesUntil = now + pickup.amount;
       io.to(player.id).emit('pickup', { label: 'LÂMINAS GIRATÓRIAS', weapon: null });
+    } else if (pickup.kind === 'overclock') {
+      player.overclockUntil = now + pickup.amount;
+      io.to(player.id).emit('pickup', { label: 'OVERCLOCK ATIVADO', weapon: null });
+      io.to(room.id).emit('killfeed', `${player.name} ativou OVERCLOCK — dano em dobro, mas mais vulnerável!`);
     }
   }
 }

@@ -314,6 +314,16 @@ const tracers = [];
 const explosions = [];
 const corpses = [];
 const bloodBursts = [];
+
+// Juice/game feel (redesign de jogabilidade) — 100% client-side, cosmético:
+// hit-stop (congela a interpolação visual por alguns frames num impacto
+// forte) e screen shake (modelo "trauma", ver Vlambeer/"The Art of
+// Screenshake"). Nenhum dos dois depende de round-trip de rede.
+let hitstopUntil = 0;
+let shakeTrauma = 0;
+function addHitstop(ms) { hitstopUntil = Math.max(hitstopUntil, performance.now() + ms); }
+function addShake(amount) { shakeTrauma = Math.min(1, shakeTrauma + amount); }
+const sparks = [];
 let stageInfo = { index: 0, count: 1, name: '', objectiveLabel: '' };
 
 // ---------------------------------------------------------------------------
@@ -890,6 +900,36 @@ function drawPickups(now) {
   }
 }
 
+// Faíscas de impacto (redesign de jogabilidade): procedural, sem sprite novo
+// — mesmo padrão de array+`life`/`duration` já usado por `explosions`.
+function spawnSparks(x, y) {
+  const count = 4 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < count; i += 1) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 3 + Math.random() * 4;
+    sparks.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: 0.18, duration: 0.18 });
+  }
+}
+
+function drawSparks(dt) {
+  for (let i = sparks.length - 1; i >= 0; i -= 1) {
+    const spark = sparks[i];
+    spark.life -= dt;
+    if (spark.life <= 0) { sparks.splice(i, 1); continue; }
+    spark.x += spark.vx * dt;
+    spark.y += spark.vy * dt;
+    const t = spark.life / spark.duration;
+    ctx.save();
+    ctx.globalAlpha = t;
+    const glow = ctx.createRadialGradient(spark.x, spark.y, 0, spark.x, spark.y, 0.12);
+    glow.addColorStop(0, 'rgba(255,225,150,0.9)');
+    glow.addColorStop(1, 'rgba(255,140,50,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(spark.x, spark.y, 0.12, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+}
+
 function drawExplosions(dt) {
   for (let i = explosions.length - 1; i >= 0; i -= 1) {
     const explosion = explosions[i];
@@ -925,6 +965,9 @@ function spawnDeathEffect(entity) {
   corpses.push({ x: entity.x, y: entity.y, angle: entity.angle, until: now + 4200, stain: Math.floor(Math.random() * 5) });
   bloodBursts.push({ x: entity.x, y: entity.y, life: 0.3, duration: 0.3 });
   playSfx('death');
+  const heavy = entity.typeId === 'tank' || entity.typeId === 'alpha';
+  addShake(heavy ? 0.45 : 0.15);
+  addHitstop(heavy ? 80 : 45);
 }
 
 function drawBloodStains(now) {
@@ -1392,8 +1435,14 @@ function render(now, dt) {
   // Modo espectador (Battle Royale, TODO-024): câmera segue `spectateTargetId`
   // em vez do próprio jogador morto, que ficaria parado pra sempre.
   const self = entities.get(spectateTargetId || selfId);
-  const camX = self ? self.x : 0;
-  const camY = self ? self.y : 0;
+  // Screen shake (modelo "trauma"): perturbação pequena e proporcional ao
+  // quadrado do trauma acumulado, aplicada na própria posição da câmera —
+  // assim mundo, névoa e cone de visão sacodem juntos de forma consistente.
+  const shakePower = shakeTrauma * shakeTrauma;
+  const shakeOffsetX = shakePower > 0 ? (Math.random() * 2 - 1) * 0.35 * shakePower : 0;
+  const shakeOffsetY = shakePower > 0 ? (Math.random() * 2 - 1) * 0.35 * shakePower : 0;
+  const camX = (self ? self.x : 0) + shakeOffsetX;
+  const camY = (self ? self.y : 0) + shakeOffsetY;
   const angle = aimAngle();
 
   ctx.save();
@@ -1431,6 +1480,7 @@ function render(now, dt) {
   drawZombies(now);
   drawPlayers(now);
   drawTracers(dt);
+  drawSparks(dt);
   drawAcidProjectiles();
   drawRockets();
   drawBloodBursts(dt);
@@ -1605,7 +1655,12 @@ function updateHud(players) {
       : (self.visionBoostUntil > Date.now()) ? BOOSTED_VISION : BASE_VISION;
     const recentLocalChange = performance.now() - lastLocalWeaponChangeAt < 500;
     if (currentWeapon !== 'grenade' && self.weapon !== currentWeapon && !recentLocalChange) activateSlot(self.weapon, false);
-    if (self.hp < lastHp) { ui.damage.style.opacity = '.78'; setTimeout(() => { ui.damage.style.opacity = '0'; }, 130); playSfx('damage'); }
+    if (self.hp < lastHp) {
+      ui.damage.style.opacity = '.78'; setTimeout(() => { ui.damage.style.opacity = '0'; }, 130); playSfx('damage');
+      const lost = lastHp - self.hp;
+      addShake(Math.min(0.6, lost / 60));
+      addHitstop(Math.min(90, 40 + lost * 1.2));
+    }
     lastHp = self.hp;
     ui.health.textContent = self.hp;
     ui.healthFill.style.width = `${self.hp}%`;
@@ -2000,10 +2055,36 @@ socket.on('shot', (shot) => {
   const impact = shot.impacts[0];
   if (!impact) return;
   tracers.push({ x1: shot.x, y1: shot.y, x2: impact.x, y2: impact.y, life: 0.12, color: shot.weapon === 'shotgun' ? '#ffb04a' : '#8be9ff' });
+  spawnSparks(impact.x, impact.y);
+  // Juice só no próprio tiro acertando algo — reforçado se o alvo mais
+  // próximo do impacto for um zumbi tanque/Alfa (achado via `entities`, já
+  // populado pelo snapshot, sem precisar de campo novo do servidor).
+  if (shot.id === selfId) {
+    const WEAPON_SHAKE = { pistol: 0.05, rifle: 0.03, shotgun: 0.09, rocket: 0.16 };
+    let heavyHit = false;
+    for (const entity of entities.values()) {
+      if (entity.kind !== 'zombie') continue;
+      if (Math.hypot(entity.x - impact.x, entity.y - impact.y) > 0.9) continue;
+      if (entity.typeId === 'tank' || entity.typeId === 'alpha') heavyHit = true;
+      break;
+    }
+    addShake((WEAPON_SHAKE[shot.weapon] || 0.04) * (heavyHit ? 1.8 : 1));
+    if (heavyHit) addHitstop(35);
+  }
 });
 socket.on('grenade', (data) => {
   explosions.push({ x: data.x, y: data.y, radius: data.radius, life: 0.35, duration: 0.35 });
   playSfx('explosion');
+  // Cobre granada/bomba de zumbi/míssil de uma vez (todos emitem este mesmo
+  // evento) — quanto mais perto do próprio jogador e maior o raio, mais forte.
+  if (selfState) {
+    const dist = Math.hypot(selfState.x - data.x, selfState.y - data.y);
+    const falloff = Math.max(0, 1 - dist / (data.radius * 3.5));
+    if (falloff > 0) {
+      addShake(Math.min(0.9, 0.35 * (data.radius / 2.4) * falloff));
+      addHitstop(Math.min(90, 50 * falloff));
+    }
+  }
 });
 
 ui.roundendReady.addEventListener('click', () => {
@@ -2186,9 +2267,9 @@ let inputAccumulator = 0;
 let lastFrame = performance.now();
 function animate(now) {
   requestAnimationFrame(animate);
-  const dt = Math.min((now - lastFrame) / 1000, 0.05);
+  const rawDt = Math.min((now - lastFrame) / 1000, 0.05);
   lastFrame = now;
-  inputAccumulator += dt;
+  inputAccumulator += rawDt;
 
   if (deployed && inputAccumulator > 0.045) {
     const keyMoveX = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0);
@@ -2200,8 +2281,14 @@ function animate(now) {
   }
   if (deployed && firing && currentWeapon === 'rifle') attemptShoot();
 
-  interpolate(dt);
-  render(now, dt);
+  // Hit-stop (redesign de jogabilidade): congela só a interpolação visual por
+  // alguns frames num impacto forte — o `input`/rede acima já rodou fora
+  // desse controle, então isso nunca desalinha o servidor.
+  const interpDt = now < hitstopUntil ? 0 : rawDt;
+  shakeTrauma = Math.max(0, shakeTrauma - rawDt * 1.8);
+
+  interpolate(interpDt);
+  render(now, rawDt);
 }
 requestAnimationFrame(animate);
 

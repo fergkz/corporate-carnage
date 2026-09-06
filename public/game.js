@@ -189,6 +189,40 @@ let height = innerHeight;
 const rememberedCanvas = document.createElement('canvas');
 const rememberedCtx = rememberedCanvas.getContext('2d');
 
+// Cache da geometria estática do mapa (chão/grade/paredes/móveis) — antes,
+// `render()` chamava drawFloor/drawWalls/drawProps diretamente TODO frame, E
+// `renderRememberedLayer()` redesenhava esse mesmo conjunto do zero de novo
+// (mapa inteiro sendo desenhado 2x por frame, a 60fps, sem nada mudar entre
+// um frame e outro). Agora essa geometria só é desenhada de verdade quando
+// `world` muda de verdade (troca de estágio) ou um prop é destruído — o
+// resto do tempo é só um `drawImage` desse cache, tanto no render direto
+// quanto na composição da camada lembrada. Dimensionado em espaço de mundo
+// (não em viewport/DPR como `rememberedCanvas` — este não depende de câmera
+// nem de tamanho de tela, só do tamanho da arena atual).
+const worldLayerCanvas = document.createElement('canvas');
+const worldLayerCtx = worldLayerCanvas.getContext('2d');
+let worldLayerDirty = true;
+function invalidateWorldLayer() { worldLayerDirty = true; }
+function renderWorldLayer(arena) {
+  const size = Math.ceil(arena * 2 * SCALE);
+  if (worldLayerCanvas.width !== size || worldLayerCanvas.height !== size) {
+    worldLayerCanvas.width = size;
+    worldLayerCanvas.height = size;
+  }
+  withCanvasContext(worldLayerCtx, () => {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, size, size);
+    ctx.save();
+    ctx.translate(size / 2, size / 2);
+    ctx.scale(SCALE, SCALE);
+    drawFloor(arena);
+    drawWalls();
+    drawProps();
+    ctx.restore();
+  });
+  worldLayerDirty = false;
+}
+
 // Modo de qualidade gráfica: 'high' (padrão) ou 'low', pra rodar melhor em
 // hardware fraco/celular. Alterna: resolução interna (dpr), recomposição da
 // camada "lembrada" do fog-of-war (throttle em vez de todo frame) e alguns
@@ -1395,15 +1429,14 @@ function withCanvasContext(targetCtx, fn) {
 // efeitos) desenhados escurecidos e recortados pela `exploredMask` — a
 // silhueta estática do que o jogador já visitou, mas não está vendo agora.
 function renderRememberedLayer(camX, camY, arena) {
+  if (worldLayerDirty) renderWorldLayer(arena);
   rememberedCtx.clearRect(0, 0, rememberedCanvas.width, rememberedCanvas.height);
   withCanvasContext(rememberedCtx, () => {
     ctx.save();
     ctx.translate(width / 2, height / 2);
     ctx.scale(SCALE, SCALE);
     ctx.translate(-camX, -camY);
-    drawFloor(arena);
-    drawWalls();
-    drawProps();
+    ctx.drawImage(worldLayerCanvas, -arena, -arena, arena * 2, arena * 2);
     ctx.fillStyle = 'rgba(0,0,0,0.48)';
     ctx.fillRect(-arena, -arena, arena * 2, arena * 2);
     ctx.globalCompositeOperation = 'destination-in';
@@ -1496,14 +1529,13 @@ function render(now, dt) {
   ctx.translate(-camX, -camY);
   if (deployed) clipToVisionCone(camX, camY, angle, visionRadius);
 
-  drawFloor(world.arena);
+  if (worldLayerDirty) renderWorldLayer(world.arena);
+  ctx.drawImage(worldLayerCanvas, -world.arena, -world.arena, world.arena * 2, world.arena * 2);
   drawBloodStains(now);
   drawGasHazards(now);
-  drawWalls();
   drawDoors(camX, camY);
   drawEnvironmentSwitches(camX, camY);
   drawChamferShadows();
-  drawProps();
   drawPickups(now);
   drawCorpses(now);
   drawDownedPlayers();
@@ -1957,6 +1989,7 @@ socket.on('disconnect', () => {
 socket.on('welcome', (data) => {
   selfId = data.id;
   world = { walls: data.walls, props: data.props, doors: data.doors || [], environmentSwitches: data.environmentSwitches || [], arena: data.arena };
+  invalidateWorldLayer();
   resetExploredMask(data.arena);
   roomId = data.roomId;
   roomCode = data.code;
@@ -2002,11 +2035,13 @@ socket.on('doorUpdate', (data) => {
 });
 socket.on('propDestroyed', (data) => {
   world.props = world.props.filter((p) => p.id !== data.id);
+  invalidateWorldLayer();
   explosions.push({ x: data.x, y: data.y, radius: 1.4, life: 0.3, duration: 0.3 });
   playSfx('explosion');
 });
 socket.on('stageChange', (data) => {
   world = { walls: data.walls, props: data.props, doors: data.doors || [], environmentSwitches: data.environmentSwitches || [], arena: data.arena };
+  invalidateWorldLayer();
   resetExploredMask(data.arena);
   entities.clear();
   targets.clear();

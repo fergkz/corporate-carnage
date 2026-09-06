@@ -153,7 +153,7 @@ const STAGES = [
     ],
     // Alvo escala com o tanto de zumbi configurado pra sala, pra continuar
     // fazendo sentido em salas com zombieBaseCount bem diferente de 14.
-    objective: (room) => ({ type: 'eliminate', target: Math.max(10, room.config.zombieBaseCount + 6) }),
+    objective: (room) => ({ type: 'eliminate', target: Math.max(10, Math.round((room.config.zombieBaseCount + 6) * threatScaleFor(room))) }),
   },
   {
     id: 'sala_final',
@@ -204,7 +204,7 @@ const GARAGE_STAGE = {
     [-14, -7], [14, 7], [-7, -14], [7, 14], [0, -7], [0, 7], [-7, 0], [7, 0], [-18, 0], [18, 0],
   ],
   spawnPoints: [[-20, -20], [20, 20], [-20, 20], [20, -20], [0, -22], [0, 22]],
-  objective: (room) => ({ type: 'eliminate', target: Math.max(10, room.config.zombieBaseCount + 6) }),
+  objective: (room) => ({ type: 'eliminate', target: Math.max(10, Math.round((room.config.zombieBaseCount + 6) * threatScaleFor(room))) }),
 };
 
 const MAP_STAGE_SETS = {
@@ -755,13 +755,16 @@ function applyStage(room, stageIndex, { preservePlayers }) {
   }
 
   const objective = stage.objective(room);
+  const scale = threatScaleFor(room);
   if (objective.type === 'boss_kill') {
     const boss = spawnZombie(room, { forceTypeId: objective.zombieTypeId });
     boss.isBoss = true;
-    for (let i = 0; i < 5; i += 1) spawnZombie(room);
+    const escortCount = Math.max(3, Math.round(5 * scale));
+    for (let i = 0; i < escortCount; i += 1) spawnZombie(room);
     room.stageProgress = { type: 'boss_kill', bossId: boss.id, bossDead: false };
   } else {
-    for (let i = 0; i < room.config.zombieBaseCount; i += 1) spawnZombie(room);
+    const initialCount = Math.max(room.config.zombieBaseCount, Math.round(room.config.zombieBaseCount * scale));
+    for (let i = 0; i < initialCount; i += 1) spawnZombie(room);
     room.stageProgress = { type: 'eliminate', target: objective.target, count: 0 };
   }
   room.finalWaveAnnounced = false;
@@ -771,7 +774,7 @@ function applyStage(room, stageIndex, { preservePlayers }) {
   room.evolutionState = {
     nextSpawnAt: Date.now() + EVOLUTION_INTERVAL_MS,
     batchSize: EVOLUTION_BATCH_BASE,
-    currentCap: Math.max(room.config.zombieBaseCount, 1) * EVOLUTION_CAP_MULTIPLIER,
+    currentCap: Math.max(room.config.zombieBaseCount, 1) * EVOLUTION_CAP_MULTIPLIER * scale,
     waveIndex: 0,
   };
 
@@ -1685,10 +1688,29 @@ function checkRoundEnd(room, now) {
 // mira instantaneamente. `sightRange` limita até onde o bot "enxerga" um
 // alvo, igual à visão limitada dos zumbis (ver ZOMBIE_SIGHT_RANGE).
 const BOT_TUNING = {
-  low: { decisionIntervalMs: 1400, decisionJitterMs: 500, aimErrorRad: 0.55, preferredEngageRange: 4.0, retreatHpRatio: 0.15, retreatDistance: 2.5, pickupSeekRadius: 5.0, grenadeUseChance: 0, targetSwitchStickiness: 0.5, sightRange: 7, fireChance: 0.45, reactionDelayMs: 900 },
-  standard: { decisionIntervalMs: 750, decisionJitterMs: 300, aimErrorRad: 0.28, preferredEngageRange: 5.5, retreatHpRatio: 0.3, retreatDistance: 3.0, pickupSeekRadius: 7.0, grenadeUseChance: 0.1, targetSwitchStickiness: 1.5, sightRange: 9, fireChance: 0.75, reactionDelayMs: 400 },
-  high: { decisionIntervalMs: 400, decisionJitterMs: 150, aimErrorRad: 0.12, preferredEngageRange: 4.0, retreatHpRatio: 0.45, retreatDistance: 4.5, pickupSeekRadius: 9.0, grenadeUseChance: 0.25, targetSwitchStickiness: 2.5, sightRange: 11, fireChance: 0.95, reactionDelayMs: 150 },
+  low: { decisionIntervalMs: 1400, decisionJitterMs: 500, aimErrorRad: 0.55, preferredEngageRange: 4.0, retreatHpRatio: 0.15, retreatDistance: 2.5, pickupSeekRadius: 5.0, grenadeUseChance: 0, targetSwitchStickiness: 0.5, sightRange: 7, fireChance: 0.45, reactionDelayMs: 900, combatWeight: 0.6 },
+  standard: { decisionIntervalMs: 750, decisionJitterMs: 300, aimErrorRad: 0.28, preferredEngageRange: 5.5, retreatHpRatio: 0.3, retreatDistance: 3.0, pickupSeekRadius: 7.0, grenadeUseChance: 0.1, targetSwitchStickiness: 1.5, sightRange: 9, fireChance: 0.75, reactionDelayMs: 400, combatWeight: 1.0 },
+  high: { decisionIntervalMs: 400, decisionJitterMs: 150, aimErrorRad: 0.12, preferredEngageRange: 4.0, retreatHpRatio: 0.45, retreatDistance: 4.5, pickupSeekRadius: 9.0, grenadeUseChance: 0.25, targetSwitchStickiness: 2.5, sightRange: 11, fireChance: 0.95, reactionDelayMs: 150, combatWeight: 1.4 },
 };
+
+// Ameaça escalada pela composição real da sala (redesign de dificuldade):
+// zumbis/objetivo hoje só olham `zombieBaseCount` (config estática do preset),
+// nunca quantos combatentes de fato estão na sala — por isso 3 bots sozinhos
+// zeravam a campanha em segundos numa sala padrão (1 humano + 3 bots). Um bot
+// pesa conforme sua dificuldade (`combatWeight` acima); um humano sempre pesa 1.
+const BASELINE_COMBATANT_WEIGHT = 2;
+const THREAT_SCALE_MIN = 0.5;
+const THREAT_SCALE_MAX = 4;
+function combatantWeight(room) {
+  let weight = 0;
+  for (const player of room.players.values()) {
+    weight += player.isBot ? (BOT_TUNING[player.botDifficulty] || BOT_TUNING.standard).combatWeight : 1;
+  }
+  return weight;
+}
+function threatScaleFor(room) {
+  return clamp(combatantWeight(room) / BASELINE_COMBATANT_WEIGHT, THREAT_SCALE_MIN, THREAT_SCALE_MAX);
+}
 
 function pickBotTarget(room, bot, tuning) {
   const candidates = [];

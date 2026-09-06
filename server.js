@@ -557,6 +557,7 @@ function spawnSingleBot(room, index) {
     botState: {
       nextDecisionAt: 0, targetId: null, wanderAngle: Math.random() * Math.PI * 2, goal: null,
       nextSteerAt: 0, steerAngle: 0, targetAcquiredAt: 0,
+      stuckStreak: 0, lastSteerX: null, lastSteerY: null,
     },
   });
   resetPlayer(room, bot, false);
@@ -1785,6 +1786,35 @@ function threatScaleFor(room) {
 }
 
 function pickBotTarget(room, bot, tuning) {
+  const now = Date.now();
+  const claimedByOthers = new Set();
+  if (room.config.mode === 'coop') {
+    // Reanimar aliado caído tem prioridade sobre continuar caçando zumbi — o
+    // bot só precisa ANDAR até lá, `updateReviveChannels()` (TODO-023) já
+    // completa o revive por proximidade sozinho. Sem isso, o bot nunca
+    // "enxergava" um aliado caído (candidatos em coop eram só zumbis).
+    // "Aliado caído" é ciência de equipe, não avistamento de inimigo — não
+    // limita por `tuning.sightRange` (7-11 unidades) de propósito. Testei
+    // com o limite de sightRange e, num mapa de ~30 unidades de arena, o bot
+    // quase nunca chegava a enxergar um aliado caído longe o bastante antes
+    // da janela de 18s (TODO-023) acabar; times de verdade sabem quando
+    // alguém caiu em qualquer lugar da sala, não só quem está por perto.
+    let downedAlly = null;
+    let downedDistance = Infinity;
+    for (const player of room.players.values()) {
+      if (player.id === bot.id || player.alive || !(player.downedUntil > now)) continue;
+      const distance = Math.hypot(player.x - bot.x, player.y - bot.y);
+      if (distance < downedDistance) { downedDistance = distance; downedAlly = player; }
+    }
+    if (downedAlly) return downedAlly;
+    // Evita vários bots empilhando no mesmo zumbi enquanto outros ficam
+    // livres — um zumbi já sendo perseguido por outro bot fica "percebido"
+    // um pouco mais longe, só perde pra um alvo livre se a diferença de
+    // distância real não for grande (não impede ajudar num aperto de verdade).
+    for (const other of room.players.values()) {
+      if (other.isBot && other.id !== bot.id && other.botState && other.botState.targetId) claimedByOthers.add(other.botState.targetId);
+    }
+  }
   const candidates = [];
   if (room.config.mode === 'coop') {
     candidates.push(...room.zombies.values());
@@ -1804,13 +1834,14 @@ function pickBotTarget(room, bot, tuning) {
     if (candidate.alive === false) continue;
     const distance = Math.hypot(candidate.x - bot.x, candidate.y - bot.y);
     if (distance > tuning.sightRange) continue;
-    if (distance < bestDistance) { bestDistance = distance; best = candidate; }
+    const perceived = distance + (claimedByOthers.has(candidate.id) ? 2.5 : 0);
+    if (perceived < bestDistance) { bestDistance = perceived; best = candidate; }
   }
   if (currentTarget && currentTarget.alive !== false && candidates.includes(currentTarget)) {
     const currentDistance = Math.hypot(currentTarget.x - bot.x, currentTarget.y - bot.y);
     if (currentDistance <= tuning.sightRange && currentDistance <= bestDistance + tuning.targetSwitchStickiness) return currentTarget;
   }
-  if (best && best.id !== bot.botState.targetId) bot.botState.targetAcquiredAt = Date.now();
+  if (best && best.id !== bot.botState.targetId) bot.botState.targetAcquiredAt = now;
   return best;
 }
 
@@ -1881,8 +1912,25 @@ function executeBotAction(room, bot, tuning, now) {
     // tick a 20Hz para cada bot era o principal gargalo de CPU do servidor.
     if (now >= bot.botState.nextSteerAt) {
       bot.botState.nextSteerAt = now + 150 + Math.random() * 100;
+      // Detecção de "preso": se a posição mal mudou nas últimas recomputações
+      // de rota (~4 * 150-250ms), a direção escolhida não está funcionando —
+      // força uma rota bem diferente em vez de insistir, evitando o empacar
+      // visível em cantos/vãos apertados que a busca local de 10 ângulos
+      // (`chooseSteeringAngle`) sozinha não resolve.
+      const moved = Math.hypot(bot.x - (bot.botState.lastSteerX ?? bot.x), bot.y - (bot.botState.lastSteerY ?? bot.y));
+      bot.botState.stuckStreak = moved < 0.08 ? (bot.botState.stuckStreak || 0) + 1 : 0;
+      bot.botState.lastSteerX = bot.x;
+      bot.botState.lastSteerY = bot.y;
       const avoid = [...room.players.values(), ...room.zombies.values()].filter((entity) => entity.id !== bot.id);
-      bot.botState.steerAngle = chooseSteeringAngle(room, bot, goal.x, goal.y, avoid, 1.0, PLAYER_RADIUS);
+      if (bot.botState.stuckStreak >= 4) {
+        bot.botState.wanderAngle = (bot.botState.wanderAngle || 0) + Math.PI * (0.6 + Math.random() * 0.6);
+        const escapeX = bot.x + Math.cos(bot.botState.wanderAngle) * 3;
+        const escapeY = bot.y + Math.sin(bot.botState.wanderAngle) * 3;
+        bot.botState.steerAngle = chooseSteeringAngle(room, bot, escapeX, escapeY, avoid, 1.0, PLAYER_RADIUS);
+        bot.botState.stuckStreak = 0;
+      } else {
+        bot.botState.steerAngle = chooseSteeringAngle(room, bot, goal.x, goal.y, avoid, 1.0, PLAYER_RADIUS);
+      }
     }
     bot.input.x = Math.cos(bot.botState.steerAngle);
     bot.input.y = Math.sin(bot.botState.steerAngle);

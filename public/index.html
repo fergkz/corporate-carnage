@@ -33,6 +33,8 @@
       #shield-bar { margin-top:8px; opacity:.35; transition:opacity .2s; }
       #shield-bar.active { opacity:1; }
       #shield-fill { height:100%; width:0%; background:linear-gradient(90deg,#2b6fa0,#54d6d2); box-shadow:0 0 12px #54d6d2; transition:width .15s; }
+      #dash-bar { margin-top:8px; }
+      #dash-fill { height:100%; width:100%; background:linear-gradient(90deg,#b8791e,var(--amber)); box-shadow:0 0 10px var(--amber); transition:width .1s linear; }
       #weapon { grid-column:3; grid-row:3; justify-self:end; align-self:end; text-align:right; }
       #weapon-name { font:700 27px 'Barlow Condensed'; letter-spacing:.1em; }
       #ammo { color:var(--amber); font:700 18px 'Barlow Condensed'; letter-spacing:.08em; transition:color .1s; }
@@ -153,12 +155,12 @@
     <div id="hud" class="overlay">
       <div id="brand"><strong>CORPORATE CARNAGE</strong>CONTENÇÃO EXECUTIVA</div>
       <div id="timer"><small>ESTÁGIO</small><span>1/1</span></div><div id="score-limit"><small>PONTOS PARA VENCER</small><span>0/30</span></div><div id="connection">CONECTANDO</div>
-      <div id="health"><div class="label">INTEGRIDADE</div><div class="bar"><div id="health-fill"></div></div><div id="health-number">100</div><div class="bar" id="shield-bar"><div id="shield-fill"></div></div></div>
+      <div id="health"><div class="label">INTEGRIDADE</div><div class="bar"><div id="health-fill"></div></div><div id="health-number">100</div><div class="bar" id="shield-bar"><div id="shield-fill"></div></div><div class="bar" id="dash-bar"><div id="dash-fill"></div></div></div>
       <div id="weapon"><div class="label">EQUIPAMENTO ATIVO</div><div id="weapon-name">FACA TÁTICA</div><div id="ammo">∞</div><div id="weapon-slots"><div class="slot active">1 FACA</div><div class="slot locked">2 PISTOLA</div><div class="slot locked">3 RIFLE</div><div class="slot locked">4 ESCOPETA</div><div class="slot locked">5 MÍSSIL</div><div class="slot locked">6 GRANADA</div></div><div id="grenades">GRANADAS <b id="grenade-count">0</b></div></div>
       <div id="objective"><div class="label">OBJETIVO</div><span></span></div>
     </div>
     <div id="scoreboard"></div><div id="killfeed"></div><div id="announcement"><h2></h2><p></p></div>
-    <div id="commands">WASD MOVER · MOUSE MIRAR · SCROLL/1–6 TROCAR ITEM · CLIQUE ATACAR/LANÇAR · G GRANADA RÁPIDA · E TRANCAR/DESTRANCAR PORTA · ESC SAIR</div><div id="pickup-toast"></div>
+    <div id="commands">WASD MOVER · MOUSE MIRAR · SCROLL/1–6 TROCAR ITEM · CLIQUE ATACAR/LANÇAR · G GRANADA RÁPIDA · ESPAÇO ESQUIVA · E TRANCAR/DESTRANCAR PORTA · ESC SAIR</div><div id="pickup-toast"></div>
     <div id="touch-controls">
       <div class="tc-stick" id="tc-move"><div class="tc-knob"></div></div>
       <div class="tc-stick tc-aim" id="tc-aim"><div class="tc-knob"></div></div>
@@ -191,6 +193,7 @@
           <div class="tut-row"><div class="tut-key">5</div><div class="tut-desc"><b>LANÇA-MÍSSEIS</b> — dano em área, cuidado perto de aliados</div></div>
           <div class="tut-row"><div class="tut-key">6</div><div class="tut-desc"><b>GRANADA</b> — arremesso à distância do cursor</div></div>
           <div class="tut-row"><div class="tut-key">G</div><div class="tut-desc"><b>Granada rápida</b> — arremessa na hora, sem trocar de slot</div></div>
+          <div class="tut-row"><div class="tut-key">ESPAÇO</div><div class="tut-desc"><b>Esquiva</b> — rajada curta com breve invulnerabilidade, ótima pra escapar de emboscada</div></div>
           <div class="tut-row"><div class="tut-key">E</div><div class="tut-desc">Abrir/trancar portas · ativar interruptores</div></div>
         </div>
         <div id="tutorial-touch" style="display:none">
@@ -198,6 +201,7 @@
           <div class="tut-row"><div class="tut-key">STICK ▶</div><div class="tut-desc">Mirar e atirar — puxe na direção do alvo pra disparar</div></div>
           <div class="tut-row"><div class="tut-key">TOQUE</div><div class="tut-desc">Toque nos ícones de arma (canto superior) pra trocar de item</div></div>
           <div class="tut-row"><div class="tut-key">5 / 6</div><div class="tut-desc"><b>LANÇA-MÍSSEIS</b> e <b>GRANADA</b> — equipe o ícone e dispare com o stick de mira</div></div>
+          <div class="tut-row"><div class="tut-key">2x TOQUE</div><div class="tut-desc"><b>Esquiva</b> — toque duas vezes rápido no stick de movimento</div></div>
         </div>
         <button id="tutorial-close">ENTENDI</button>
       </div>

@@ -9,6 +9,7 @@ const GRID_LINE = 'rgba(255,255,255,0.035)';
 const ARENA_BORDER = '#7a4a22';
 const SHIELD_CAPACITY = 60;
 const REVIVE_CHANNEL_MS = 3000; // espelha REVIVE_CHANNEL_MS do servidor (TODO-023)
+const DASH_COOLDOWN_MS = 3200; // espelha DASH_COOLDOWN_MS do servidor (redesign de jogabilidade)
 const BASE_VISION = 8; // unidades de mundo visíveis normalmente (estilo Project Zomboid)
 const BOOSTED_VISION = 15; // unidades de mundo visíveis com o especial de visão ativo
 const BLACKOUT_VISION = 3.5; // unidades de mundo visíveis durante o evento ambiental de apagão
@@ -251,6 +252,7 @@ const ui = {
   killfeed: document.querySelector('#killfeed'), ammo: document.querySelector('#ammo'), pickup: document.querySelector('#pickup-toast'),
   hud: document.querySelector('#hud'), spectatorBanner: document.querySelector('#spectator-banner'),
   shieldBar: document.querySelector('#shield-bar'), shieldFill: document.querySelector('#shield-fill'), grenadeCount: document.querySelector('#grenade-count'),
+  dashFill: document.querySelector('#dash-fill'),
   roundend: document.querySelector('#roundend'), roundendScoreboard: document.querySelector('#roundend-scoreboard'),
   roundendReady: document.querySelector('#roundend-ready'), roundendStatus: document.querySelector('#roundend-status'),
   roundendLobby: document.querySelector('#roundend-lobby'), roundendLeave: document.querySelector('#roundend-leave'),
@@ -1183,6 +1185,22 @@ function drawBladesAura(entity, now) {
   }
 }
 
+function drawDashTrail(entity, now) {
+  if (!(entity.dashUntil > Date.now())) return;
+  const angle = Math.atan2(entity.dashDirY || 0, entity.dashDirX || 1);
+  ctx.save();
+  ctx.translate(entity.x, entity.y);
+  ctx.rotate(angle);
+  const gradient = ctx.createLinearGradient(-1.3, 0, 0, 0);
+  gradient.addColorStop(0, 'rgba(243,162,41,0)');
+  gradient.addColorStop(1, 'rgba(243,162,41,0.55)');
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.moveTo(0, -0.32); ctx.lineTo(-1.3, 0); ctx.lineTo(0, 0.32); ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
 function drawPlayers(now) {
   for (const [id, entity] of entities) {
     if (entity.kind !== 'player' || entity.alive === false) continue;
@@ -1207,6 +1225,7 @@ function drawPlayers(now) {
       drawWeaponInHand(weapon, entity.angle, entity.flashUntil || 0, entity.flashWeapon, now);
     }
     ctx.restore();
+    drawDashTrail(entity, now);
     drawBladesAura(entity, now);
     if (entity.shield > 0) {
       ctx.strokeStyle = 'rgba(63,127,209,0.85)';
@@ -1472,6 +1491,9 @@ function interpolate(dt) {
     entity.projectileKind = target.kind;
     entity.radius = target.radius;
     entity.bladesUntil = target.bladesUntil;
+    entity.dashUntil = target.dashUntil;
+    entity.dashDirX = target.dashDirX;
+    entity.dashDirY = target.dashDirY;
     entity.downedUntil = target.downedUntil;
     entity.reviverId = target.reviverId;
     entity.reviveStartedAt = target.reviveStartedAt;
@@ -1597,6 +1619,9 @@ function updateHud(players) {
     ui.shieldFill.style.width = `${shieldPct}%`;
     ui.shieldBar.classList.toggle('active', shieldPct > 0);
     ui.grenadeCount.textContent = String(self.grenades || 0);
+    const dashRemaining = (self.nextDashAt || 0) - Date.now();
+    const dashPct = Math.max(0, Math.min(100, 100 - (dashRemaining / DASH_COOLDOWN_MS) * 100));
+    ui.dashFill.style.width = `${dashPct}%`;
 
     const isBattleRoyale = latestRoomSettings && latestRoomSettings.lifeMode === 'battleRoyale';
     livingOthersCache = players.filter((p) => p.alive && p.id !== selfId);
@@ -2014,6 +2039,7 @@ addEventListener('keydown', (event) => {
   if (event.code === 'Digit6') activateSlot('grenade');
   if (event.code === 'KeyG' && availableSlots().includes('grenade')) { activateSlot('grenade', false); attemptGrenade(); }
   if (event.code === 'KeyE' && deployed) { socket.emit('toggleDoor'); socket.emit('activateSwitch'); }
+  if (event.code === 'Space' && deployed) { event.preventDefault(); socket.emit('dash'); }
   if ((event.code === 'ArrowLeft' || event.code === 'ArrowRight') && spectateTargetId && livingOthersCache.length > 1) {
     const idx = livingOthersCache.findIndex((p) => p.id === spectateTargetId);
     const dir = event.code === 'ArrowRight' ? 1 : -1;
@@ -2098,6 +2124,17 @@ setupVirtualStick(tcMove, tcMove?.querySelector('.tc-knob'), (nx, ny) => {
   touchMoveX = nx;
   touchMoveY = ny;
 }, () => { touchMoveX = 0; touchMoveY = 0; });
+
+// Dash por duplo-toque no stick de movimento — sem precisar de um botão
+// dedicado nem mudar setupVirtualStick() (genérica, também usada pelo stick
+// de mira). A direção do dash em si é resolvida no servidor a partir do
+// `input.x/y` mais recente, que o stick já está enviando.
+let lastMoveTapAt = 0;
+tcMove?.addEventListener('touchstart', () => {
+  const now = performance.now();
+  if (now - lastMoveTapAt < 260) socket.emit('dash');
+  lastMoveTapAt = now;
+});
 
 let aimStickHeld = false;
 setupVirtualStick(tcAim, tcAim?.querySelector('.tc-knob'), (nx, ny) => {

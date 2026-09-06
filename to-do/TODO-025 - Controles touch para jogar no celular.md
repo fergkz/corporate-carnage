@@ -1,6 +1,6 @@
 # TODO-025 — Controles touch para jogar no celular
 
-**Status**: pendente
+**Status**: concluído
 
 **Pedido original**: no brainstorm de melhorias pós-playtest, o assistente sugeriu "controles touch pro celular (joystick virtual + botão de tiro) — o jogo vai pro público geral do evento, alguém vai tentar no celular mesmo sem isso ter sido pensado ainda". Fernando pediu para implementar tudo o que foi sugerido no brainstorm.
 
@@ -17,6 +17,7 @@
 - Ajustar o layout do HUD (`public/index.html`) pra não sobrepor os novos controles nas áreas de toque inferiores — testar em `resize_window` com preset mobile (375x812) antes de considerar pronto.
 - Zero mudança necessária no servidor — toda a adaptação é client-side, emitindo os mesmos eventos (`input`, `fire`, `equip`) que já existem hoje.
 
-**Riscos / decisões em aberto**:
-1. Q1 - Confirma a recomendação de joystick duplo (movimento + mira, paridade com desktop) em vez de mira automática mais simples? Mira automática é mais rápido de implementar e mais fácil pra quem nunca jogou, mas favorece quem joga no celular de forma diferente do PC.
-2. Q2 - Vale a pena investir nisso agora (esforço razoavelmente alto de UI touch) sabendo que o jogo não foi desenhado pra telas pequenas desde o início (HUD, tamanho de sprite, densidade de informação), ou prefere tratar como "melhor esforço" (funciona, mas não necessariamente confortável) pra essa primeira versão?
+Implementado com joystick duplo (Q1: movimento + mira, paridade com
+desktop) e como "melhor esforço" pra telas pequenas (Q2), com um ajuste
+pontual de layout do HUD onde ele realmente colidia com os controles —
+ver [RELEASE_NOTES.md](RELEASE_NOTES.md).

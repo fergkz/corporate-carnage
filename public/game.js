@@ -2110,6 +2110,33 @@ setupVirtualStick(tcAim, tcAim?.querySelector('.tc-knob'), (nx, ny) => {
   if (!aimStickHeld) { aimStickHeld = true; firing = true; attemptFire(); }
 }, () => { aimStickHeld = false; firing = false; });
 
+// Tutorial rápido de controles (TODO-026): mostra o modal sozinho na
+// primeira visita (lembrado via localStorage pra não repetir depois) e
+// mantém um botão "VER CONTROLES" sempre disponível na tela inicial pra
+// quem quiser reabrir de propósito. Conteúdo varia por teclado/touch —
+// reaproveita a mesma detecção de `isTouchDevice` de cima.
+const TUTORIAL_SEEN_KEY = 'cc_tutorial_seen';
+const tutorialModal = document.querySelector('#tutorial-modal');
+const tutorialKeyboard = document.querySelector('#tutorial-keyboard');
+const tutorialTouch = document.querySelector('#tutorial-touch');
+const tutorialOpenBtn = document.querySelector('#tutorial-open');
+const tutorialCloseBtn = document.querySelector('#tutorial-close');
+if (tutorialKeyboard && tutorialTouch) {
+  tutorialKeyboard.style.display = isTouchDevice ? 'none' : 'block';
+  tutorialTouch.style.display = isTouchDevice ? 'block' : 'none';
+}
+function showTutorial() { tutorialModal?.classList.add('show'); }
+function closeTutorial() {
+  tutorialModal?.classList.remove('show');
+  try { localStorage.setItem(TUTORIAL_SEEN_KEY, '1'); } catch (err) { /* Safari modo privado etc: sem persistência, sem problema — só reaparece a cada visita. */ }
+}
+tutorialOpenBtn?.addEventListener('click', showTutorial);
+tutorialCloseBtn?.addEventListener('click', closeTutorial);
+tutorialModal?.addEventListener('click', (event) => { if (event.target === tutorialModal) closeTutorial(); });
+let tutorialSeen = false;
+try { tutorialSeen = localStorage.getItem(TUTORIAL_SEEN_KEY) === '1'; } catch (err) { tutorialSeen = false; }
+if (!tutorialSeen) showTutorial();
+
 // Se a URL trouxer ?room=CODIGO (link compartilhado de sala só-por-link), já
 // deixa o código pré-preenchido — leitura same-origin, nada é enviado a
 // terceiros com isso.

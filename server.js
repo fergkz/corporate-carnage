@@ -16,6 +16,13 @@ const TICK_RATE = 20;
 // Pontuação-limite automática do modo versus (não há mais duração configurável
 // de partida — o fim agora vem dos objetivos da campanha, ver STAGES abaixo).
 const VERSUS_SCORE_LIMIT = 30;
+// Revive em modo Coop (TODO-023): ao morrer com lifeMode 'respawn', o jogador
+// fica "caído" (reanimável) por DOWNED_TIMEOUT_MS antes do respawn automático
+// de segurança; um aliado parado perto por REVIVE_CHANNEL_MS antecipa isso.
+const DOWNED_TIMEOUT_MS = 18000;
+const REVIVE_CHANNEL_MS = 3000;
+const REVIVE_RANGE = 1.8;
+const REVIVE_HP = 50;
 // Sequência fixa de presets pra salas com rotação automática ativada — varia
 // modo/estilo de vida a cada nova rodada sem o host precisar reconfigurar.
 const AUTO_ROTATE_PRESETS = [
@@ -470,6 +477,7 @@ function makePlayer(id, name, extra = {}) {
     input: { x: 0, y: 0 },
     invulnerableUntil: 0, ready: false, wantsNextRound: false,
     grenades: 0, shield: 0, visionBoostUntil: 0, repelUntil: 0, bladesUntil: 0,
+    downedUntil: 0, reviverId: null, reviveStartedAt: 0,
     joinedAt: Date.now(),
     ...extra,
   };
@@ -481,6 +489,7 @@ function resetPlayer(room, player, preserveScore = true) {
     x, y, angle: 0, hp: 100, shield: 0, grenades: 0, alive: true, invulnerableUntil: Date.now() + 1800,
     weapon: 'knife', inventory: ['knife'], ammo: 0,
     visionBoostUntil: 0, repelUntil: 0, bladesUntil: 0,
+    downedUntil: 0, reviverId: null, reviveStartedAt: 0,
   });
   if (!preserveScore) Object.assign(player, { score: 0, kills: 0, deaths: 0 });
 }
@@ -894,8 +903,21 @@ function killPlayer(room, target, attacker) {
     attacker.kills += 1;
   }
   const attackerName = attacker ? attacker.name : 'Um zumbi';
-  io.to(room.id).emit('killfeed', `${attackerName} neutralizou ${target.name}`);
   dropLoot(room, target);
+  const canRevive = room.config.mode === 'coop' && room.config.lifeMode === 'respawn';
+  if (canRevive) {
+    target.downedUntil = Date.now() + DOWNED_TIMEOUT_MS;
+    target.reviverId = null;
+    target.reviveStartedAt = 0;
+    io.to(room.id).emit('killfeed', `${attackerName} derrubou ${target.name} — reanime-o!`);
+    setTimeout(() => {
+      if (!roomAlive(room) || room.state !== 'playing') return;
+      const player = room.players.get(target.id);
+      if (player && !player.alive) resetPlayer(room, player, true);
+    }, DOWNED_TIMEOUT_MS);
+    return;
+  }
+  io.to(room.id).emit('killfeed', `${attackerName} neutralizou ${target.name}`);
   if (room.config.lifeMode === 'respawn') {
     setTimeout(() => {
       if (!roomAlive(room) || room.state !== 'playing') return;
@@ -1994,6 +2016,35 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => handleDisconnect(socket));
 });
 
+// Reanimação em Coop (TODO-023): um aliado vivo parado perto de um jogador
+// caído (`downedUntil` futuro) por REVIVE_CHANNEL_MS o reanima com vida
+// parcial (REVIVE_HP), antecipando o respawn automático de segurança
+// agendado em killPlayer(). Sair do alcance reinicia a canalização.
+function updateReviveChannels(room, now) {
+  for (const player of room.players.values()) {
+    if (player.alive || !player.downedUntil || now >= player.downedUntil) continue;
+    let reviver = null;
+    for (const other of room.players.values()) {
+      if (other.id === player.id || !other.alive || !other.ready) continue;
+      if (Math.hypot(other.x - player.x, other.y - player.y) <= REVIVE_RANGE) { reviver = other; break; }
+    }
+    if (!reviver) {
+      player.reviverId = null;
+      player.reviveStartedAt = 0;
+      continue;
+    }
+    if (player.reviverId !== reviver.id) {
+      player.reviverId = reviver.id;
+      player.reviveStartedAt = now;
+    }
+    if (now - player.reviveStartedAt >= REVIVE_CHANNEL_MS) {
+      resetPlayer(room, player, true);
+      player.hp = REVIVE_HP;
+      io.to(room.id).emit('killfeed', `${reviver.name} reanimou ${player.name}`);
+    }
+  }
+}
+
 function update(room) {
   if (!roomAlive(room)) return;
   if (room.state === 'lobby') return;
@@ -2012,6 +2063,8 @@ function update(room) {
     moveWithCollision(room, player, nx * 5.8 * dt, ny * 5.8 * dt);
     collectPickups(room, player, now);
   }
+
+  if (room.config.mode === 'coop') updateReviveChannels(room, now);
 
   for (const pickup of room.pickups.values()) {
     if (!pickup.active && pickup.respawnAt && now >= pickup.respawnAt) {

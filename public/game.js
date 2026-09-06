@@ -8,6 +8,7 @@ const FLOOR_FILL = '#1b2224';
 const GRID_LINE = 'rgba(255,255,255,0.035)';
 const ARENA_BORDER = '#7a4a22';
 const SHIELD_CAPACITY = 60;
+const REVIVE_CHANNEL_MS = 3000; // espelha REVIVE_CHANNEL_MS do servidor (TODO-023)
 const BASE_VISION = 8; // unidades de mundo visíveis normalmente (estilo Project Zomboid)
 const BOOSTED_VISION = 15; // unidades de mundo visíveis com o especial de visão ativo
 const BLACKOUT_VISION = 3.5; // unidades de mundo visíveis durante o evento ambiental de apagão
@@ -948,6 +949,33 @@ function drawCorpses(now) {
   }
 }
 
+// Jogador "caído" reanimável em Coop (TODO-023): mostra o corpo parado (sem
+// o fade de 4.2s do corpses[] decorativo) enquanto downedUntil não expirou,
+// e uma barra de progresso quando um aliado está canalizando o revive.
+function drawDownedPlayers() {
+  if (!spriteReady(sprites.corpse)) return;
+  const nowMs = Date.now();
+  const frameW = sprites.corpse.naturalWidth / 2;
+  const frameH = sprites.corpse.naturalHeight;
+  for (const entity of entities.values()) {
+    if (entity.kind !== 'player' || entity.alive !== false) continue;
+    if (!entity.downedUntil || nowMs >= entity.downedUntil) continue;
+    ctx.save();
+    ctx.translate(entity.x, entity.y);
+    if (Math.cos(entity.angle) < 0) ctx.scale(-1, 1);
+    ctx.drawImage(sprites.corpse, 0, 0, frameW, frameH, -0.65, -1.05, 1.3, frameH / frameW * 1.3);
+    ctx.restore();
+    if (entity.reviverId && entity.reviveStartedAt) {
+      const progress = Math.max(0, Math.min(1, (nowMs - entity.reviveStartedAt) / REVIVE_CHANNEL_MS));
+      const barWidth = 0.9;
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(entity.x - barWidth / 2, entity.y - 1.2, barWidth, 0.12);
+      ctx.fillStyle = '#50d89d';
+      ctx.fillRect(entity.x - barWidth / 2, entity.y - 1.2, barWidth * progress, 0.12);
+    }
+  }
+}
+
 function drawBloodBursts(dt) {
   if (!spriteReady(sprites.bloodBurst)) { bloodBursts.length = 0; return; }
   const frameCount = 5;
@@ -1372,6 +1400,7 @@ function render(now, dt) {
   drawProps();
   drawPickups(now);
   drawCorpses(now);
+  drawDownedPlayers();
   drawZombies(now);
   drawPlayers(now);
   drawTracers(dt);
@@ -1435,6 +1464,9 @@ function interpolate(dt) {
     entity.projectileKind = target.kind;
     entity.radius = target.radius;
     entity.bladesUntil = target.bladesUntil;
+    entity.downedUntil = target.downedUntil;
+    entity.reviverId = target.reviverId;
+    entity.reviveStartedAt = target.reviveStartedAt;
   }
 }
 
@@ -1570,12 +1602,15 @@ function updateHud(players) {
       spectateTargetId = null;
     }
     const spectating = !!spectateTargetId;
-    ui.hud.classList.toggle('spectating', spectating);
+    const isDowned = !self.alive && !!self.downedUntil && Date.now() < self.downedUntil;
+    ui.hud.classList.toggle('spectating', spectating || isDowned);
     if (ui.spectatorBanner) {
-      ui.spectatorBanner.style.display = spectating ? 'block' : 'none';
+      ui.spectatorBanner.style.display = (spectating || isDowned) ? 'block' : 'none';
       if (spectating) {
         const target = players.find((p) => p.id === spectateTargetId);
         ui.spectatorBanner.textContent = target ? `ASSISTINDO: ${target.name} · ←/→ TROCAR` : 'AGUARDANDO FIM DA PARTIDA';
+      } else if (isDowned) {
+        ui.spectatorBanner.textContent = 'CAÍDO — AGUARDANDO RESGATE...';
       }
     }
   }

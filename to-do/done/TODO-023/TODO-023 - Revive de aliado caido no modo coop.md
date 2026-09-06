@@ -1,6 +1,6 @@
 # TODO-023 — Revive de aliado caído no modo Coop
 
-**Status**: pendente
+**Status**: concluído
 
 **Pedido original**: no brainstorm de melhorias pós-playtest, o assistente sugeriu "hoje morte = respawn automático sozinho depois de 2,2s; um aliado reanimar mais rápido chegando perto cria cooperação de verdade em vez de cada um por si". Fernando pediu para implementar tudo o que foi sugerido no brainstorm.
 
@@ -15,6 +15,4 @@
 - Em modo VERSUS, nada muda — a mecânica de revive não faz sentido entre rivais (e mesmo em VERSUS com bots aliados não existe "time", é todo mundo contra todo mundo) — continuar com o respawn automático fixo de 2,2s exatamente como hoje.
 - Cliente: barra de progresso visual sobre o jogador caído durante a canalização de revive (reaproveitando o padrão já usado pra barra de vida/escudo), e o próprio jogador caído vendo uma mensagem tipo "Aguardando resgate..." em vez do respawn instantâneo.
 
-**Riscos / decisões em aberto**:
-1. Q1 - Quanto tempo de janela "caído" antes do respawn automático de segurança (a proposta sugere 15-20s) e quanto tempo de canalização pra reanimar (sugerido 3s) fazem sentido pro ritmo do jogo?
-2. Q2 - O aliado reanimado volta com vida parcial (ex. 50, como sugerido) ou vida cheia? Vida parcial mantém risco, mas pode frustrar se o grupo já estava sob pressão.
+Implementado com `DOWNED_TIMEOUT_MS = 18000` (Q1: 18s de janela caído), `REVIVE_CHANNEL_MS = 3000` (3s de canalização) e `REVIVE_HP = 50` (Q2: vida parcial) — ver [RELEASE_NOTES.md](RELEASE_NOTES.md).

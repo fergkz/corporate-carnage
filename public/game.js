@@ -280,6 +280,14 @@ let mouseY = height / 2;
 let visionRadius = BASE_VISION;
 let blackoutUntil = 0;
 const keys = new Set();
+// Controles touch (TODO-025): joystick virtual de movimento alimenta estes
+// dois em vez do teclado; ficam em 0 (sem efeito) em dispositivos sem touch.
+let touchMoveX = 0;
+let touchMoveY = 0;
+function setDeployed(value) {
+  deployed = value;
+  document.body.classList.toggle('deployed', value);
+}
 
 // --- Estado de sessão (sala/lobby) ---
 let clientState = 'landing'; // 'landing' | 'createRoom' | 'lobby' | 'playing' | 'roundEnd'
@@ -290,7 +298,7 @@ let isQueuedSpectator = false;
 
 function setClientState(next) {
   clientState = next;
-  deployed = next === 'playing';
+  setDeployed(next === 'playing');
   ui.landing.style.display = next === 'landing' ? 'grid' : 'none';
   ui.createRoomEl.style.display = next === 'createRoom' ? 'grid' : 'none';
   ui.lobbyEl.style.display = next === 'lobby' ? 'grid' : 'none';
@@ -1935,7 +1943,7 @@ socket.on('roundEnd', (data) => {
   ui.roundendLobby.style.display = isHost ? 'block' : 'none';
   ui.roundend.style.display = 'grid';
   clientState = 'roundEnd';
-  deployed = false;
+  setDeployed(false);
 });
 socket.on('readyUpdate', ({ ready, total }) => {
   ui.roundendStatus.textContent = `${ready}/${total} PRONTOS`;
@@ -2016,6 +2024,92 @@ addEventListener('keydown', (event) => {
 });
 addEventListener('keyup', (event) => keys.delete(event.code));
 
+// Troca de arma tocável (TODO-025): os ícones de #weapon-slots já existiam
+// só como decoração do HUD — um clique/tap neles agora equivale às teclas
+// 1-6, servindo tanto o público touch quanto quem prefere clicar com o
+// mouse em vez de decorar teclas.
+ui.slots.forEach((el, i) => {
+  el.addEventListener('click', () => { if (deployed) activateSlot(SLOT_ORDER[i]); });
+});
+
+// Controles touch (TODO-025): joystick de movimento (esquerda) alimenta
+// touchMoveX/Y (consumidos em animate()); joystick de mira (direita) reusa
+// mouseX/mouseY — aimAngle()/attemptGrenade() já calculam ângulo/distância
+// a partir deles, sem precisar duplicar essa lógica pro touch. Puxar o
+// stick de mira além da zona morta dispara um tiro (equivalente a um
+// mousedown) e mantém `firing` ligado enquanto for mantido puxado — pra
+// armas automáticas (rifle) isso já autoatira via animate(); pras demais,
+// equivale a segurar o botão do mouse (ainda respeitando o cooldown de
+// cada arma). Soltar de volta pra zona morta ou tirar o dedo para o tiro,
+// igual ao mouseup no desktop.
+const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+if (isTouchDevice) document.body.classList.add('touch-controls');
+
+const JOYSTICK_RADIUS = 46; // metade do diâmetro visual do stick (ver CSS), menos a folga do knob
+const AIM_DEADZONE = 0.18; // fração do raio abaixo da qual a mira/disparo não reage (evita toque acidental)
+const AIM_MAX_DISTANCE = 6; // unidades de mundo de mira/arremesso no puxão máximo do stick de mira
+
+function setupVirtualStick(baseEl, knobEl, onMove, onEnd) {
+  if (!baseEl || !knobEl) return;
+  let touchId = null;
+  let originX = 0;
+  let originY = 0;
+  const handleStart = (event) => {
+    if (touchId !== null) return;
+    const touch = event.changedTouches[0];
+    touchId = touch.identifier;
+    const rect = baseEl.getBoundingClientRect();
+    originX = rect.left + rect.width / 2;
+    originY = rect.top + rect.height / 2;
+    event.preventDefault();
+  };
+  const handleMove = (event) => {
+    for (const touch of event.changedTouches) {
+      if (touch.identifier !== touchId) continue;
+      let dx = touch.clientX - originX;
+      let dy = touch.clientY - originY;
+      const dist = Math.hypot(dx, dy) || 1;
+      const clamped = Math.min(dist, JOYSTICK_RADIUS);
+      dx = (dx / dist) * clamped;
+      dy = (dy / dist) * clamped;
+      knobEl.style.transform = `translate(${dx}px, ${dy}px)`;
+      onMove(dx / JOYSTICK_RADIUS, dy / JOYSTICK_RADIUS);
+      event.preventDefault();
+    }
+  };
+  const handleEnd = (event) => {
+    for (const touch of event.changedTouches) {
+      if (touch.identifier !== touchId) continue;
+      touchId = null;
+      knobEl.style.transform = 'translate(0px, 0px)';
+      onEnd();
+      event.preventDefault();
+    }
+  };
+  baseEl.addEventListener('touchstart', handleStart, { passive: false });
+  addEventListener('touchmove', handleMove, { passive: false });
+  addEventListener('touchend', handleEnd, { passive: false });
+  addEventListener('touchcancel', handleEnd, { passive: false });
+}
+
+const tcMove = document.querySelector('#tc-move');
+const tcAim = document.querySelector('#tc-aim');
+setupVirtualStick(tcMove, tcMove?.querySelector('.tc-knob'), (nx, ny) => {
+  touchMoveX = nx;
+  touchMoveY = ny;
+}, () => { touchMoveX = 0; touchMoveY = 0; });
+
+let aimStickHeld = false;
+setupVirtualStick(tcAim, tcAim?.querySelector('.tc-knob'), (nx, ny) => {
+  if (Math.hypot(nx, ny) < AIM_DEADZONE) {
+    if (aimStickHeld) { aimStickHeld = false; firing = false; }
+    return;
+  }
+  mouseX = width / 2 + nx * AIM_MAX_DISTANCE * SCALE;
+  mouseY = height / 2 + ny * AIM_MAX_DISTANCE * SCALE;
+  if (!aimStickHeld) { aimStickHeld = true; firing = true; attemptFire(); }
+}, () => { aimStickHeld = false; firing = false; });
+
 // Se a URL trouxer ?room=CODIGO (link compartilhado de sala só-por-link), já
 // deixa o código pré-preenchido — leitura same-origin, nada é enviado a
 // terceiros com isso.
@@ -2033,8 +2127,10 @@ function animate(now) {
   inputAccumulator += dt;
 
   if (deployed && inputAccumulator > 0.045) {
-    const moveX = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0);
-    const moveY = (keys.has('KeyS') ? 1 : 0) - (keys.has('KeyW') ? 1 : 0);
+    const keyMoveX = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0);
+    const keyMoveY = (keys.has('KeyS') ? 1 : 0) - (keys.has('KeyW') ? 1 : 0);
+    const moveX = keyMoveX || touchMoveX;
+    const moveY = keyMoveY || touchMoveY;
     socket.emit('input', { x: moveX, y: moveY, angle: aimAngle() });
     inputAccumulator = 0;
   }

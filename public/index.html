@@ -40,7 +40,7 @@
       #grenades { margin-top:6px; color:#8fd3d0; font:600 11px Inter; letter-spacing:.1em; }
       #grenades b { color:#fff; }
       #weapon-slots { display:flex; gap:6px; justify-content:end; margin-top:8px; }
-      .slot { min-width:54px; border:1px solid #3c484c; padding:4px 8px; color:#77858a; font:600 10px Inter; background:rgba(5,10,12,.6); }
+      .slot { min-width:54px; border:1px solid #3c484c; padding:4px 8px; color:#77858a; font:600 10px Inter; background:rgba(5,10,12,.6); pointer-events:auto; cursor:pointer; }
       .slot.active { color:#fff; border-color:var(--amber); box-shadow:inset 0 -2px var(--amber); }
       .slot.locked { opacity:.3; }
       #scoreboard { position:fixed; right:28px; top:90px; min-width:210px; z-index:6; font-size:12px; pointer-events:none; }
@@ -107,6 +107,28 @@
       #score-limit small { display:block; color:#8d9a9f; font-size:9px; letter-spacing:.12em; }
       .room-code-display { font:700 22px 'Barlow Condensed'; letter-spacing:.2em; color:var(--amber); }
       @media(max-width:700px){#scoreboard{display:none}.start-card{padding:30px 24px}#hud{padding:16px}#weapon-slots{display:none}}
+      /* Controles touch (TODO-025): dois joysticks virtuais — só aparecem em
+         dispositivos com toque (classe adicionada via JS) e só durante a
+         partida (classe `deployed`), pra não cobrir os menus de lobby/fim de
+         rodada, que já ocupam a tela inteira com z-index maior. */
+      #touch-controls { display:none; }
+      body.touch-controls.deployed #touch-controls { display:block; }
+      .tc-stick { position:fixed; bottom:22px; width:116px; height:116px; border-radius:50%; background:rgba(15,22,25,.55); border:2px solid rgba(243,162,41,.4); z-index:8; touch-action:none; }
+      #tc-move { left:22px; }
+      .tc-aim { right:22px; border-color:rgba(191,60,53,.5); }
+      .tc-knob { position:absolute; left:50%; top:50%; width:50px; height:50px; margin:-25px; border-radius:50%; background:rgba(243,162,41,.55); transition:transform .05s linear; }
+      .tc-aim .tc-knob { background:rgba(191,60,53,.6); }
+      /* #health/#weapon usam o grid 3-colunas do #hud, pensado pra telas
+         largas — nelas o painel de arma (com os 6 slots) estoura a coluna e
+         fica atrás/sobre o stick de mira em telas estreitas. Tirar os dois
+         do grid (position:fixed) e empilhar acima da faixa dos sticks
+         (bottom 22-138px) resolve isso sem redesenhar o HUD inteiro. */
+      body.touch-controls #health, body.touch-controls #weapon { position:fixed; bottom:150px; width:auto; }
+      body.touch-controls #health { left:12px; max-width:150px; }
+      body.touch-controls #weapon { right:12px; max-width:170px; }
+      body.touch-controls #weapon-slots { display:flex !important; flex-wrap:wrap; justify-content:flex-end; max-width:170px; }
+      body.touch-controls .slot { min-width:40px; padding:5px 6px; font-size:9px; }
+      body.touch-controls #commands { display:none; }
     </style>
   </head>
   <body>
@@ -124,6 +146,10 @@
     </div>
     <div id="scoreboard"></div><div id="killfeed"></div><div id="announcement"><h2></h2><p></p></div>
     <div id="commands">WASD MOVER · MOUSE MIRAR · SCROLL/1–6 TROCAR ITEM · CLIQUE ATACAR/LANÇAR · G GRANADA RÁPIDA · E TRANCAR/DESTRANCAR PORTA · ESC SAIR</div><div id="pickup-toast"></div>
+    <div id="touch-controls">
+      <div class="tc-stick" id="tc-move"><div class="tc-knob"></div></div>
+      <div class="tc-stick tc-aim" id="tc-aim"><div class="tc-knob"></div></div>
+    </div>
 
     <div id="landing">
       <div class="start-card">

@@ -115,4 +115,4 @@ Digit6+clique no desktop.
   cálculo de vetor).
 
 ## Commits
-- (ver `to-do/done/TODO-025/` mesclado em `main` pelo `finish-worktree.sh`)
+- `c10950e` — feat: controles touch pra celular (TODO-025)

@@ -129,6 +129,19 @@
       body.touch-controls #weapon-slots { display:flex !important; flex-wrap:wrap; justify-content:flex-end; max-width:170px; }
       body.touch-controls .slot { min-width:40px; padding:5px 6px; font-size:9px; }
       body.touch-controls #commands { display:none; }
+      /* Tutorial rápido de controles (TODO-026): modal opcional na tela
+         inicial, fechável, com lembrete via localStorage pra não repetir. */
+      #tutorial-modal { position:fixed; inset:0; z-index:25; display:none; place-items:center; background:rgba(2,5,7,.9); padding:24px; }
+      #tutorial-modal.show { display:grid; }
+      #tutorial-modal .start-card { max-height:calc(100vh - 48px); overflow-y:auto; }
+      #tutorial-modal .start-card::before { content:'GUIA RÁPIDO'; }
+      .tut-row { display:flex; align-items:center; gap:12px; padding:9px 0; border-bottom:1px solid #232d30; }
+      .tut-row:last-of-type { border-bottom:none; }
+      .tut-key { flex:0 0 auto; min-width:34px; height:30px; padding:0 8px; display:grid; place-items:center; border:1px solid #3c484c; border-radius:4px; background:rgba(5,10,12,.7); color:var(--amber); font:700 11px 'Barlow Condensed'; letter-spacing:.04em; }
+      .tut-desc { color:#c7d0d3; font-size:12px; line-height:1.4; }
+      .tut-desc b { color:#fff; }
+      #tutorial-open { background:transparent; color:#8d9a9f; border:1px solid #3a474c; font-size:10px; height:36px; margin-top:14px; width:100%; }
+      #tutorial-close { width:100%; margin-top:18px; }
     </style>
   </head>
   <body>
@@ -164,6 +177,29 @@
         <div class="section-title">SALAS PÚBLICAS</div>
         <div id="public-rooms" class="room-list"><div class="empty-hint">Procurando salas...</div></div>
         <div class="controls"><span><b>WASD</b> mover</span><span><b>MOUSE</b> mirar</span><span><b>SCROLL</b> trocar item</span><span><b>CLIQUE</b> atacar/lançar</span><span><b>G</b> granada</span></div>
+        <button id="tutorial-open" class="ghost">VER CONTROLES</button>
+      </div>
+    </div>
+
+    <div id="tutorial-modal">
+      <div class="start-card">
+        <h1>COMO<br><span>JOGAR</span></h1>
+        <div id="tutorial-keyboard">
+          <div class="tut-row"><div class="tut-key">WASD</div><div class="tut-desc">Mover pelo mapa</div></div>
+          <div class="tut-row"><div class="tut-key">MOUSE</div><div class="tut-desc">Mirar · <b>clique</b> ataca ou lança o item equipado</div></div>
+          <div class="tut-row"><div class="tut-key">1–6</div><div class="tut-desc">Trocar de item (ou use o <b>scroll</b>)</div></div>
+          <div class="tut-row"><div class="tut-key">5</div><div class="tut-desc"><b>LANÇA-MÍSSEIS</b> — dano em área, cuidado perto de aliados</div></div>
+          <div class="tut-row"><div class="tut-key">6</div><div class="tut-desc"><b>GRANADA</b> — arremesso à distância do cursor</div></div>
+          <div class="tut-row"><div class="tut-key">G</div><div class="tut-desc"><b>Granada rápida</b> — arremessa na hora, sem trocar de slot</div></div>
+          <div class="tut-row"><div class="tut-key">E</div><div class="tut-desc">Abrir/trancar portas · ativar interruptores</div></div>
+        </div>
+        <div id="tutorial-touch" style="display:none">
+          <div class="tut-row"><div class="tut-key">◀ STICK</div><div class="tut-desc">Mover (canto inferior esquerdo)</div></div>
+          <div class="tut-row"><div class="tut-key">STICK ▶</div><div class="tut-desc">Mirar e atirar — puxe na direção do alvo pra disparar</div></div>
+          <div class="tut-row"><div class="tut-key">TOQUE</div><div class="tut-desc">Toque nos ícones de arma (canto superior) pra trocar de item</div></div>
+          <div class="tut-row"><div class="tut-key">5 / 6</div><div class="tut-desc"><b>LANÇA-MÍSSEIS</b> e <b>GRANADA</b> — equipe o ícone e dispare com o stick de mira</div></div>
+        </div>
+        <button id="tutorial-close">ENTENDI</button>
       </div>
     </div>
 

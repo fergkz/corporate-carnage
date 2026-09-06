@@ -1,6 +1,6 @@
 # TODO-026 — Tutorial rápido de controles na tela inicial
 
-**Status**: pendente
+**Status**: concluído
 
 **Pedido original**: no brainstorm de melhorias pós-playtest, o assistente sugeriu "um tutorial de 5-10s opcional na primeira tela — os comandos já aparecem discretos no rodapé, mas coisas como a tecla G de granada rápida ou o slot do míssil (5) são fáceis de passar batido pra quem nunca jogou". Fernando pediu para implementar tudo o que foi sugerido no brainstorm.
 
@@ -15,5 +15,8 @@
 - Focar o conteúdo do tutorial nos pontos menos óbvios citados no pedido (granada rápida `G`, slot de míssil `5`, granada no slot `6`) em vez de repetir tudo que já está intuitivo (WASD/mouse) — um tutorial longo demais tem o efeito oposto do pretendido (ninguém lê).
 - Não depende de nenhuma mudança de servidor — é inteiramente client-side, em `public/index.html`/`public/game.js`.
 
-**Riscos / decisões em aberto**:
-1. Q1 - O conteúdo deve ser só texto/ícones estáticos (mais rápido de implementar) ou uma pequena animação/GIF mostrando cada ação (mais claro, mais trabalho de produção)? Recomendo começar pelo estático dado o prazo do evento.
+Implementado com conteúdo estático (Q1, conforme recomendado) — ver
+[RELEASE_NOTES.md](RELEASE_NOTES.md). Como o TODO-025 (controles touch)
+foi implementado depois deste item ter sido escrito, o tutorial ganhou
+também uma variante de conteúdo específica pra touch (stick de
+movimento/mira em vez de teclado), detectada automaticamente.

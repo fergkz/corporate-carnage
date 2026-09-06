@@ -227,6 +227,14 @@ const weapons = {
 
 const WEAPON_RANK = { pistol: 1, rifle: 2, shotgun: 3, rocket: 4 };
 
+// Dash/dodge do jogador — velocidade normal é 5.8 u/s; a janela de i-frame
+// (usa o mesmo `invulnerableUntil` já respeitado por applyDamage/updateZombies)
+// é o que de fato resolve ser emparedado por zumbis dos dois lados, não a
+// rajada de velocidade em si.
+const DASH_SPEED = 15.5;
+const DASH_DURATION_MS = 160;
+const DASH_COOLDOWN_MS = 3200;
+const DASH_IFRAME_MS = 250;
 const SHIELD_CAPACITY = 60;
 const HEART_HEAL = 25;
 const GRENADE_MAX = 3;
@@ -478,6 +486,7 @@ function makePlayer(id, name, extra = {}) {
     invulnerableUntil: 0, ready: false, wantsNextRound: false,
     grenades: 0, shield: 0, visionBoostUntil: 0, repelUntil: 0, bladesUntil: 0,
     downedUntil: 0, reviverId: null, reviveStartedAt: 0,
+    dashUntil: 0, nextDashAt: 0, dashDirX: 0, dashDirY: 0,
     joinedAt: Date.now(),
     ...extra,
   };
@@ -490,6 +499,7 @@ function resetPlayer(room, player, preserveScore = true) {
     weapon: 'pistol', inventory: ['knife', 'pistol'], ammo: 18,
     visionBoostUntil: 0, repelUntil: 0, bladesUntil: 0,
     downedUntil: 0, reviverId: null, reviveStartedAt: 0,
+    dashUntil: 0, nextDashAt: 0,
   });
   if (!preserveScore) Object.assign(player, { score: 0, kills: 0, deaths: 0 });
 }
@@ -1918,6 +1928,27 @@ io.on('connection', (socket) => {
     if (Number.isFinite(data.angle)) player.angle = data.angle;
   });
 
+  // Dash/dodge (redesign de jogabilidade): rajada curta de velocidade + i-frame
+  // breve, reaproveitando `invulnerableUntil` (já respeitado por applyDamage e
+  // pelo alvo de mira dos zumbis) em vez de inventar uma checagem de dano nova.
+  // Direção trava no momento do dash (não segue o input ao vivo) pra fugir de
+  // fato na direção pretendida em vez de "curvar" no meio do movimento.
+  socket.on('dash', () => {
+    const room = getRoom(socket);
+    if (!room) return;
+    const player = room.players.get(socket.id);
+    if (!player || !player.alive || !player.ready) return;
+    const now = Date.now();
+    if (now < (player.nextDashAt || 0)) return;
+    const magnitude = Math.hypot(player.input.x, player.input.y);
+    const angle = magnitude > 0.05 ? Math.atan2(player.input.y, player.input.x) : player.angle;
+    player.dashDirX = Math.cos(angle);
+    player.dashDirY = Math.sin(angle);
+    player.dashUntil = now + DASH_DURATION_MS;
+    player.nextDashAt = now + DASH_COOLDOWN_MS;
+    player.invulnerableUntil = Math.max(player.invulnerableUntil, now + DASH_IFRAME_MS);
+  });
+
   socket.on('toggleDoor', () => {
     const room = getRoom(socket);
     if (!room) return;
@@ -2057,10 +2088,14 @@ function update(room) {
   for (const player of room.players.values()) {
     if (player.isBot) updateBotAI(room, player, now);
     if (!player.alive || !player.ready) continue;
-    const magnitude = Math.hypot(player.input.x, player.input.y) || 1;
-    const nx = player.input.x / magnitude;
-    const ny = player.input.y / magnitude;
-    moveWithCollision(room, player, nx * 5.8 * dt, ny * 5.8 * dt);
+    if (now < player.dashUntil) {
+      moveWithCollision(room, player, player.dashDirX * DASH_SPEED * dt, player.dashDirY * DASH_SPEED * dt);
+    } else {
+      const magnitude = Math.hypot(player.input.x, player.input.y) || 1;
+      const nx = player.input.x / magnitude;
+      const ny = player.input.y / magnitude;
+      moveWithCollision(room, player, nx * 5.8 * dt, ny * 5.8 * dt);
+    }
     collectPickups(room, player, now);
   }
 

@@ -471,7 +471,7 @@ function makePlayer(id, name, extra = {}) {
     name,
     x: 0, y: 0, angle: 0, hp: 100, alive: true,
     score: 0, kills: 0, deaths: 0,
-    weapon: 'knife', inventory: ['knife'], ammo: 0,
+    weapon: 'pistol', inventory: ['knife', 'pistol'], ammo: 18,
     lastShot: 0, lastGrenade: 0,
     color: Math.floor(Math.random() * 0xffffff),
     input: { x: 0, y: 0 },
@@ -487,7 +487,7 @@ function resetPlayer(room, player, preserveScore = true) {
   const [x, y] = spawnPoint(room);
   Object.assign(player, {
     x, y, angle: 0, hp: 100, shield: 0, grenades: 0, alive: true, invulnerableUntil: Date.now() + 1800,
-    weapon: 'knife', inventory: ['knife'], ammo: 0,
+    weapon: 'pistol', inventory: ['knife', 'pistol'], ammo: 18,
     visionBoostUntil: 0, repelUntil: 0, bladesUntil: 0,
     downedUntil: 0, reviverId: null, reviveStartedAt: 0,
   });
